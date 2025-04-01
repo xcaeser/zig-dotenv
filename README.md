@@ -111,6 +111,7 @@ Creates a generic environment variable management struct that handles loading, p
 - `load(?[]const u8)` - Loads variables from a file (default: ".env")
 - `get([]const u8)` - Gets a variable by string name
 - `key(EnvKey)` - Gets a variable using an enum key
+- `setProcessEnv([]const u8, ?[]const u8)` - Sets an environment variable in the current process. If value is null, unsets the variable
 - `writeAll(writer, includeSystemVars)` - Writes all variables to a writer
 
 ## Contributing
