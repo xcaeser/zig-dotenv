@@ -1,0 +1,114 @@
+# zig-dotenv
+
+A powerful Zig library for loading and managing environment variables from .env files.
+
+## Features
+
+- Load environment variables from `.env` files
+- Type-safe access to environment variables via enums
+- Set environment variables in the current process (not just the child proces) - uses C standard library functions
+- Parse and manage environment variables with a clean API
+
+## Installation
+
+Add to your `build.zig.zon`:
+
+```zig
+.{
+    .name = "your-project",
+    .version = "0.1.0",
+    .dependencies = .{
+        .dotenv = .{
+            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.1.0.tar.gz",
+            // .hash = "...",
+        },
+    },
+}
+```
+
+Then in your `build.zig`:
+
+```zig
+const dotenv_dep = b.dependency("dotenv", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+exe.addModule("dotenv", dotenv_dep.module("dotenv"));
+// Add to tests
+test_exe.addModule("dotenv", dotenv_dep.module("dotenv"));
+```
+
+## Usage
+
+```zig
+const std = @import("std");
+const dotenv = @import("dotenv");
+
+// Define your environment keys as an enum
+pub const EnvKeys = enum(u8) {
+    OPENAI_API_KEY,
+    AWS_ACCESS_KEY_ID,
+    COGNITO_CLIENT_SECRET,
+    S3_BUCKET,
+};
+
+// Create a type-safe environment manager
+pub const Env = dotenv.Env(EnvKeys);
+
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Initialize environment manager
+    var env = Env.init(allocator);
+    defer env.deinit();
+
+    // Load from .env.local (or pass null to load from .env)
+    try env.load(".env.local");
+
+    // Access env vars using type-safe enum keys
+    const openai = env.key(.OPENAI_API_KEY);
+    std.debug.print("OPENAI_API_KEY={s}\n", .{openai});
+
+    // Or access by string
+    const aws_key = env.get("AWS_ACCESS_KEY_ID");
+    std.debug.print("AWS_ACCESS_KEY_ID={s}\n", .{aws_key});
+}
+```
+
+## Example .env File
+
+```
+# API Keys
+OPENAI_API_KEY=sk-your-api-key-here
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+
+# Other configuration
+S3_BUCKET=my-bucket
+COGNITO_CLIENT_SECRET=abcdef123456
+```
+
+## API Reference
+
+### Env(EnvKey) type
+
+Creates a generic environment variable management struct that handles loading, parsing, and accessing environment variables.
+
+#### Methods
+
+- `init(allocator)` - Initializes a new environment manager
+- `deinit()` - Frees all resources
+- `load(?[]const u8)` - Loads variables from a file (default: ".env")
+- `get([]const u8)` - Gets a variable by string name
+- `key(EnvKey)` - Gets a variable using an enum key
+- `writeAll(writer, includeSystemVars)` - Writes all variables to a writer
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
+
+## License
+
+MIT
