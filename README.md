@@ -9,44 +9,6 @@ A powerful Zig library for loading and managing environment variables from .env 
 - Set environment variables in the current process (not just the child process) - uses C standard library functions
 - Parse and manage environment variables with a clean API
 
-## Installation
-
-### Option 1: Add to your project
-
-```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz
-```
-
-### Option 2: Add to your `build.zig.zon` directly
-
-```zig
-.{
-    .name = "your-project",
-    .version = "0.1.0",
-    .dependencies = .{
-        .dotenv = .{
-            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz",
-            .hash = "...",
-        },
-    },
-}
-```
-
-Then in your `build.zig`:
-
-```zig
-const dotenv_dep = b.dependency("dotenv", .{
-    .target = target,
-    .optimize = optimize,
-});
-
-exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
-exe.linkLibC(); // important to add because we're using stdlib.h
-
-// Add to tests
-exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
-```
-
 ## Usage
 
 ```zig
@@ -96,6 +58,44 @@ AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 # Other configuration
 S3_BUCKET="my-bucket"
 COGNITO_CLIENT_SECRET='abcdef123456'
+```
+
+## Installation
+
+### Option 1: Add to your project
+
+```bash
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz
+```
+
+### Option 2: Add to your `build.zig.zon` directly
+
+```zig
+.{
+    .name = "your-project",
+    .version = "0.1.0",
+    .dependencies = .{
+        .dotenv = .{
+            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz",
+            .hash = "...",
+        },
+    },
+}
+```
+
+Then in your `build.zig`:
+
+```zig
+const dotenv_dep = b.dependency("dotenv", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
+exe.linkLibC(); // important to add because we're using stdlib.h
+
+// Add to tests
+exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 ```
 
 ## API Reference
