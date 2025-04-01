@@ -41,7 +41,7 @@ pub fn Env(comptime EnvKey: type) type {
 
         const Self = @This();
 
-        /// Initializes a new Env struct
+        /// Initializes a new empty Env struct instance
         ///
         /// Creates an empty StringArrayHashMap for storing environment variables
         ///
@@ -53,6 +53,18 @@ pub fn Env(comptime EnvKey: type) type {
         pub fn init(allocator: std.mem.Allocator) Self {
             return Self{
                 .items = std.process.EnvMap.init(allocator),
+                .allocator = allocator,
+            };
+        }
+
+        /// Initializes a new Env struct instance with the current process environment variables
+        ///
+        /// `@return` A new Env struct instance
+        ///
+        /// Caller must deinit
+        pub fn initWithProcessEnvs(allocator: std.mem.Allocator) !Self {
+            return Self{
+                .items = try std.process.getEnvMap(allocator),
                 .allocator = allocator,
             };
         }
@@ -72,8 +84,10 @@ pub fn Env(comptime EnvKey: type) type {
         ///
         /// `@param filename` Optional custom filename for the environment file
         ///
+        /// `@param silent` flag to suppress error messages
+        ///
         /// `@throws Error` if file cannot be read or parsed
-        pub fn load(self: *Self, filename: ?[]const u8) !void {
+        pub fn load(self: *Self, filename: ?[]const u8, silent: bool) !void {
             // Set filename, using default ".env" if not provided
             if (filename != null) {
                 self.filename = filename.?;
@@ -83,7 +97,9 @@ pub fn Env(comptime EnvKey: type) type {
 
             // Attempt to open the environment file
             const envFile = std.fs.cwd().openFile(self.filename, .{ .mode = .read_only }) catch {
-                print("Expected: '{s}', but no env file detected\n", .{self.filename});
+                if (!silent) {
+                    print("Expected: '{s}', but no env file detected\n", .{self.filename});
+                }
                 return;
             };
             defer envFile.close();
@@ -157,7 +173,14 @@ pub fn Env(comptime EnvKey: type) type {
 
                 if (pair.next()) |value| {
                     // Trim whitespace from value
-                    const value_trimmed = std.mem.trim(u8, value, " \t");
+                    var value_trimmed = std.mem.trim(u8, value, " \t");
+                    if (value_trimmed.len >= 2) {
+                        if (value_trimmed[0] == '"' and value_trimmed[value_trimmed.len - 1] == '"') {
+                            value_trimmed = value_trimmed[1 .. value_trimmed.len - 1];
+                        } else if (value_trimmed[0] == '\'' and value_trimmed[value_trimmed.len - 1] == '\'') {
+                            value_trimmed = value_trimmed[1 .. value_trimmed.len - 1];
+                        }
+                    }
 
                     // Let EnvMap handle the memory management by using put
                     try self.items.put(k, value_trimmed);
@@ -282,7 +305,7 @@ test "Env custom filename" {
     defer env.deinit();
 
     // Test setting a custom filename
-    try env.load(".env.test");
+    try env.load(".env.test", true);
     try testing.expectEqualStrings(env.filename, ".env.test");
 }
 
@@ -295,10 +318,10 @@ test "Parse environment variables" {
 
     // Test parsing content
     const content =
-        \\TEST_KEY1=value1
+        \\TEST_KEY1="value1"
         \\# Comment line
-        \\TEST_KEY2=value2
-        \\TEST_EMPTY_KEY=
+        \\TEST_KEY2='value2'
+        \\TEST_EMPTY_KEY=''
         \\TEST_NUMERIC_VALUE=123
     ;
 
@@ -379,7 +402,7 @@ test "Load environment from file" {
     var env = TestEnv.init(allocator);
     defer env.deinit();
 
-    try env.load(filename);
+    try env.load(filename, false);
 
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "filevalue1");
     try testing.expectEqualStrings(env.get("TEST_KEY2"), "filevalue2");
@@ -403,7 +426,7 @@ test "Load environment with trimmed values" {
     var env = TestEnv.init(allocator);
     defer env.deinit();
 
-    try env.load(filename);
+    try env.load(filename, false);
 
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "value_with_spaces");
     try testing.expectEqualStrings(env.get("TEST_KEY2"), "tabbed_value");
@@ -467,7 +490,7 @@ test "Non-existent environment file" {
     defer env.deinit();
 
     // Should not throw error for non-existent file
-    try env.load("non_existent_file.env");
+    try env.load("non_existent_file.env", true);
     try testing.expectEqual(env.items.count(), 0);
 }
 
@@ -509,7 +532,7 @@ test "Environment file with and without .env extension" {
         var env = TestEnv.init(allocator);
         defer env.deinit();
 
-        try env.load(filename);
+        try env.load(filename, false);
         try testing.expectEqualStrings(env.get("TEST_KEY1"), "regular");
     }
 
@@ -524,7 +547,7 @@ test "Environment file with and without .env extension" {
         var env = TestEnv.init(allocator);
         defer env.deinit();
 
-        try env.load(filename);
+        try env.load(filename, false);
         try testing.expectEqualStrings(env.get("TEST_KEY1"), "noextension");
     }
 }
@@ -552,7 +575,7 @@ test "Integration test" {
     defer env.deinit();
 
     // Load from file
-    try env.load(filename);
+    try env.load(filename, false);
 
     // Test string key access
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "integration_value1");
