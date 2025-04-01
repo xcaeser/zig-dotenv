@@ -40,9 +40,11 @@ const dotenv_dep = b.dependency("dotenv", .{
     .optimize = optimize,
 });
 
-exe.addModule("dotenv", dotenv_dep.module("dotenv"));
+exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
+exe.linkLibC(); // important to add because we're using stdlib.h
+
 // Add to tests
-test_exe.addModule("dotenv", dotenv_dep.module("dotenv"));
+exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 ```
 
 ## Usage
