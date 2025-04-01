@@ -11,7 +11,13 @@ A powerful Zig library for loading and managing environment variables from .env 
 
 ## Installation
 
-Add to your `build.zig.zon`:
+### Option 1: Add to your project
+
+```bash
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.1.0.tar.gz
+```
+
+### Option 2: Add to your `build.zig.zon` directly
 
 ```zig
 .{
@@ -20,7 +26,7 @@ Add to your `build.zig.zon`:
     .dependencies = .{
         .dotenv = .{
             .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.1.0.tar.gz",
-            // .hash = "...",
+            .hash = "dotenv-0.1.0-lRzK2Y1dAABCs-YWxIYAuJD9K6-9xa5gF9E1-n6gvNZa",
         },
     },
 }
