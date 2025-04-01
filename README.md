@@ -6,7 +6,7 @@ A powerful Zig library for loading and managing environment variables from .env 
 
 - Load environment variables from `.env` files
 - Type-safe access to environment variables via enums
-- Set environment variables in the current process (not just the child process) - uses C standard library functions
+- Set environment variables in the current process (not just the child process) - uses C standard library functions. Supports linux, macos, and windows.
 - Parse and manage environment variables with a clean API
 
 ## Usage
@@ -67,7 +67,7 @@ COGNITO_CLIENT_SECRET='abcdef123456'
 #### Option 1: Add to your project
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.3.0.tar.gz
 ```
 
 #### Option 2: Add to your `build.zig.zon` directly
@@ -78,7 +78,7 @@ zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar
     .version = "0.1.0",
     .dependencies = .{
         .dotenv = .{
-            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz",
+            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.3.0.tar.gz",
             .hash = "...",
         },
     },

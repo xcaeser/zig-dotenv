@@ -212,14 +212,15 @@ pub fn Env(comptime EnvKey: type) type {
         /// }
         /// ```
         pub fn setProcessEnv(self: *Self, k: []const u8, v: ?[]const u8) !void {
-            // Windows is not supported currently
-            if (@import("builtin").os.tag == .windows) {
-                @compileError("Windows not yet implemented");
-            }
+            const builtin = @import("builtin");
+            const os = builtin.os.tag;
 
             // Import C standard library for setenv/unsetenv
             const c = @cImport({
                 @cInclude("stdlib.h");
+                if (os == .windows) {
+                    @cInclude("windows.h");
+                }
             });
 
             // Create null-terminated strings for C functions
@@ -231,11 +232,33 @@ pub fn Env(comptime EnvKey: type) type {
                 const value_c = try self.allocator.dupeZ(u8, val);
                 defer self.allocator.free(value_c);
 
+                switch (os) {
+                    .windows => {
+                        if (c.SetEnvironmentVariableA(key_c, value_c) == 0) {
+                            return error.SetEnvFailed;
+                        }
+                    },
+                    else => { // POSIX systems
+                        if (c.setenv(key_c, value_c, 1) != 0) {
+                            return error.SetEnvFailed;
+                        }
+                    },
+                }
+
                 // Use setenv to set the environment variable
-                if (c.setenv(key_c, value_c, 1) != 0) return error.SetEnvFailed;
             } else {
-                // Unsetting the environment variable
-                if (c.unsetenv(key_c) != 0) return error.UnsetEnvFailed;
+                switch (builtin.os.tag) {
+                    .windows => {
+                        if (c.SetEnvironmentVariableA(key_c, null) == 0) {
+                            return error.UnsetEnvFailed;
+                        }
+                    },
+                    else => { // POSIX systems
+                        if (c.unsetenv(key_c) != 0) {
+                            return error.UnsetEnvFailed;
+                        }
+                    },
+                }
             }
         }
 
