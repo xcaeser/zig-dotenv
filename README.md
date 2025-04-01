@@ -14,7 +14,7 @@ A powerful Zig library for loading and managing environment variables from .env 
 ### Option 1: Add to your project
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.1.0.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz
 ```
 
 ### Option 2: Add to your `build.zig.zon` directly
@@ -25,8 +25,8 @@ zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.1.0.tar
     .version = "0.1.0",
     .dependencies = .{
         .dotenv = .{
-            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.1.0.tar.gz",
-            .hash = "dotenv-0.1.0-lRzK2Y1dAABCs-YWxIYAuJD9K6-9xa5gF9E1-n6gvNZa",
+            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.2.0.tar.gz",
+            .hash = "...",
         },
     },
 }
@@ -74,7 +74,7 @@ pub fn main() !void {
     defer env.deinit();
 
     // Load from .env.local (or pass null to load from .env)
-    try env.load(".env.local");
+    try env.load(".env.local", true); // silent=true to suppress error messages if .env.local is not found
 
     // Access env vars using type-safe enum keys
     const openai = env.key(.OPENAI_API_KEY);
@@ -94,8 +94,8 @@ OPENAI_API_KEY=sk-your-api-key-here
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 
 # Other configuration
-S3_BUCKET=my-bucket
-COGNITO_CLIENT_SECRET=abcdef123456
+S3_BUCKET="my-bucket"
+COGNITO_CLIENT_SECRET='abcdef123456'
 ```
 
 ## API Reference
@@ -107,8 +107,9 @@ Creates a generic environment variable management struct that handles loading, p
 #### Methods
 
 - `init(allocator)` - Initializes a new environment manager
+- `initWithProcessEnvs(allocator)` - Initializes a new environment manager with the current process environment variables
 - `deinit()` - Frees all resources
-- `load(?[]const u8)` - Loads variables from a file (default: ".env")
+- `load(?[]const u8, bool)` - Loads variables from a file (default: ".env")
 - `get([]const u8)` - Gets a variable by string name
 - `key(EnvKey)` - Gets a variable using an enum key
 - `setProcessEnv([]const u8, ?[]const u8)` - Sets an environment variable in the current process. If value is null, unsets the variable
