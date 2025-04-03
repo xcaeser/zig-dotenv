@@ -5,6 +5,7 @@ A powerful Zig library for loading and managing environment variables from .env 
 ## Features
 
 - Load environment variables from `.env` files
+- write to `.env` files
 - Type-safe access to environment variables via enums
 - Set environment variables in the current process (not just the child process) - uses C standard library functions. Supports linux, macos, and windows.
 - Parse and manage environment variables with a clean API
