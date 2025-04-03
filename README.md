@@ -14,7 +14,7 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 - Load environment variables from `.env` files
 - Append or write to `.env` files
 - Type-safe access using enums
-- Modify the **current process** environment (via `setenv` / `SetEnvironmentVariable`)
+- Modify the **current process** environment (via `SetEnvironmentVariable`)
 - Clean API for parsing and managing `.env` values
 
 ## 🚀 Usage
