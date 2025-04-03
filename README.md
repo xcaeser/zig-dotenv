@@ -5,7 +5,7 @@
 A powerful Zig library for loading, parsing, and managing environment variables from .env files.
 
 [![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
-[![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
+[![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 
 </div>
 
