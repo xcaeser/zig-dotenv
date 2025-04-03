@@ -1,10 +1,12 @@
 # zig-dotenv
 
-A powerful Zig library for loading, parsing, and managing environment variables from `.env` files.
-
 <div>
-[![Zig Version](https://img.shields.io/badge/Zig-0.14.0-orange.svg?logo=zig)](README.md)  
-[![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
+
+A powerful Zig library for loading, parsing, and managing environment variables from .env files.
+
+[![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
+[![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
+
 </div>
 
 ---
