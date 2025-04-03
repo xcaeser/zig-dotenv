@@ -41,7 +41,7 @@ pub fn main() !void {
     defer env.deinit();
 
     // Load from .env.local (or .env if null)
-    try env.load(".env.local", true); // `silent = true` to suppress missing file errors
+    try env.load(".env.local", true, true); // `setEnvsInProcess = true` to modify the current process' environment, if false only env hashmap is populated, `silent = true` to suppress errors loading the file
 
     // Access values
     const openai = env.key(.OPENAI_API_KEY);
@@ -67,7 +67,7 @@ COGNITO_CLIENT_SECRET='abcdef123456'
 ### Option 1: `zig fetch`
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.4.0.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.5.0.tar.gz
 ```
 
 ### Option 2: `build.zig.zon`
@@ -78,7 +78,7 @@ zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.4.0.tar
     .version = "0.1.0",
     .dependencies = .{
         .dotenv = .{
-            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.4.0.tar.gz",
+            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.5.0.tar.gz",
             .hash = "...", // use zig's suggested hash
         },
     },
@@ -107,7 +107,7 @@ Creates a generic environment manager with the following methods:
 | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `fn init(allocator: std.mem.Allocator, includeCurrentProcessEnvs: bool) Env`                         | Initialize a new environment manager           |
 | `fn deinit(self: *Env) void`                                                                         | Frees memory and internal data                 |
-| `fn load(self: *Env, filename: ?[]const u8, silent: bool) !void`                                     | Load a `.env` file into the environment        |
+| `fn load(self: *Env, filename: ?[]const u8, setEnvsInProcess: bool silent: bool) !void`              | Load a `.env` file into the environment        |
 | `fn parse(self: *Env, content: []u8) !void`                                                          | Parse raw `.env`-formatted text                |
 | `fn get(self: *Env, key: []const u8) []const u8`                                                     | Get value by string key (panics if missing)    |
 | `fn key(self: *Env, key: EnvKey) []const u8`                                                         | Get value by enum key (panics if missing)      |
