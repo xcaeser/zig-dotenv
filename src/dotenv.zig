@@ -19,7 +19,7 @@ const print = std.debug.print;
 ///   AWS_ACCESS_KEY_ID,
 /// };
 /// const Env = dotenv.Env(EnvKeys);
-/// var env = Env.init(allocator);
+/// var env = Env.init(allocator, false);
 /// defer env.deinit();
 ///
 /// try env.load(".env.local"); // or try env.load(null) -> to load .env instead
@@ -30,7 +30,7 @@ const print = std.debug.print;
 pub fn Env(comptime EnvKey: type) type {
     return struct {
         /// Path to the environment file, defaults to ".env"
-        filename: []const u8 = ".env",
+        filename: []const u8,
 
         /// Storage for environment variables using a string hash map
         /// Allows for optional string values (null represents unset)
@@ -47,24 +47,27 @@ pub fn Env(comptime EnvKey: type) type {
         ///
         /// `@param allocator` Memory allocator for managing string allocations
         ///
+        /// `@param includeCurrentProcessEnvs` If true, the current process' environment variables will be included in the Env struct
+        ///
         /// `@return` A new Env struct instance
         ///
         /// Caller must deinit
-        pub fn init(allocator: std.mem.Allocator) Self {
-            return Self{
-                .items = std.process.EnvMap.init(allocator),
-                .allocator = allocator,
-            };
-        }
+        pub fn init(allocator: std.mem.Allocator, includeCurrentProcessEnvs: bool) Self {
+            const env_map = if (includeCurrentProcessEnvs)
+                std.process.getEnvMap(allocator) catch {
+                    std.debug.print("Failed to get current process environment variables, using empty map\n", .{});
+                    return Self{
+                        .filename = ".env",
+                        .items = std.process.EnvMap.init(allocator),
+                        .allocator = allocator,
+                    };
+                }
+            else
+                std.process.EnvMap.init(allocator);
 
-        /// Initializes a new Env struct instance with the current process environment variables
-        ///
-        /// `@return` A new Env struct instance
-        ///
-        /// Caller must deinit
-        pub fn initWithProcessEnvs(allocator: std.mem.Allocator) !Self {
             return Self{
-                .items = try std.process.getEnvMap(allocator),
+                .filename = ".env",
+                .items = env_map,
                 .allocator = allocator,
             };
         }
@@ -275,9 +278,9 @@ pub fn Env(comptime EnvKey: type) type {
         /// Example to write to stdout:
         ///
         /// ```zig
-        /// try env.writeAll(std.io.getStdOut().writer(), false);
+        /// try env.writeAllEnvPairs(std.io.getStdOut().writer(), false);
         /// ```
-        pub fn writeAll(self: *Self, writer: anytype, includeSystemVars: bool) !void {
+        pub fn writeAllEnvPairs(self: *Self, writer: anytype, includeSystemVars: bool) !void {
             var envs: std.process.EnvMap = if (includeSystemVars) try std.process.getEnvMap(self.allocator) else self.items;
             defer if (includeSystemVars) envs.deinit();
 
@@ -293,6 +296,33 @@ pub fn Env(comptime EnvKey: type) type {
                 try writer.writeAll(entry.value_ptr.*);
                 try writer.writeAll("\n");
             }
+        }
+
+        pub fn writeEnvPairToFile(self: *Self, k: []const u8, v: []const u8, filename: ?[]const u8) !void {
+            const fname = if (filename == null) self.filename else filename.?;
+
+            const file = std.fs.cwd().openFile(fname, .{ .mode = .read_write }) catch |err| switch (err) {
+                error.FileNotFound => try std.fs.cwd().createFile(fname, .{}),
+                else => return err,
+            };
+            defer file.close();
+
+            const end_pos = try file.getEndPos();
+            if (end_pos > 0) {
+                var buf: [1]u8 = undefined;
+                _ = try file.pread(&buf, end_pos - 1);
+                if (buf[0] != '\n') {
+                    try file.seekTo(end_pos);
+                    try file.writer().writeAll("\n");
+                } else {
+                    try file.seekTo(end_pos);
+                }
+            } else {
+                try file.seekTo(0);
+            }
+
+            const writer = file.writer();
+            try writer.print("{s}={s}\n", .{ k, v });
         }
     };
 }
@@ -313,7 +343,7 @@ test "Env initialization and deinitialization" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     try testing.expectEqual(env.items.count(), 0);
@@ -324,7 +354,7 @@ test "Env custom filename" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     // Test setting a custom filename
@@ -336,7 +366,7 @@ test "Parse environment variables" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     // Test parsing content
@@ -361,7 +391,7 @@ test "Get environment variables by string key" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     const content =
@@ -379,7 +409,7 @@ test "Get environment variables by enum key" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, true);
     defer env.deinit();
 
     const content =
@@ -422,7 +452,7 @@ test "Load environment from file" {
     try createTestEnvFile(filename, content);
     defer deleteTestEnvFile(filename);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     try env.load(filename, false);
@@ -446,7 +476,7 @@ test "Load environment with trimmed values" {
     try createTestEnvFile(filename, content);
     defer deleteTestEnvFile(filename);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     try env.load(filename, false);
@@ -460,7 +490,7 @@ test "Write environment variables" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, true);
     defer env.deinit();
 
     const content =
@@ -474,7 +504,7 @@ test "Write environment variables" {
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
-    try env.writeAll(buffer.writer(), false);
+    try env.writeAllEnvPairs(buffer.writer(), false);
 
     // Check if the output contains our environment variables
     const output = buffer.items;
@@ -486,7 +516,7 @@ test "Set process environment variables" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     // Set a test environment variable
@@ -509,7 +539,7 @@ test "Non-existent environment file" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     // Should not throw error for non-existent file
@@ -521,7 +551,7 @@ test "Handle comments and empty lines" {
     const allocator = testing.allocator;
     const TestEnv = dotenv.Env(EnvKeys);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     const content =
@@ -552,7 +582,7 @@ test "Environment file with and without .env extension" {
         try createTestEnvFile(filename, content);
         defer deleteTestEnvFile(filename);
 
-        var env = TestEnv.init(allocator);
+        var env = TestEnv.init(allocator, false);
         defer env.deinit();
 
         try env.load(filename, false);
@@ -567,7 +597,7 @@ test "Environment file with and without .env extension" {
         try createTestEnvFile(filename, content);
         defer deleteTestEnvFile(filename);
 
-        var env = TestEnv.init(allocator);
+        var env = TestEnv.init(allocator, true);
         defer env.deinit();
 
         try env.load(filename, false);
@@ -594,7 +624,7 @@ test "Integration test" {
     try createTestEnvFile(filename, content);
     defer deleteTestEnvFile(filename);
 
-    var env = TestEnv.init(allocator);
+    var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
     // Load from file
@@ -617,9 +647,42 @@ test "Integration test" {
     // Test writing
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
-    try env.writeAll(buffer.writer(), false);
+    try env.writeAllEnvPairs(buffer.writer(), false);
 
     const output = buffer.items;
     try testing.expect(std.mem.indexOf(u8, output, "TEST_KEY1=integration_value1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "TEST_KEY2=integration_value2") != null);
+}
+
+test "writeEnvPairToFile appends key=value to a file" {
+    const allocator = testing.allocator;
+    const TestEnv = dotenv.Env(EnvKeys);
+
+    var env = TestEnv.init(allocator, false);
+    defer env.deinit();
+
+    const test_filename = "test.env";
+
+    // clear file content first - for testing purposes
+    {
+        const file = try std.fs.cwd().createFile(test_filename, .{
+            .truncate = true,
+        });
+        file.close();
+    }
+
+    try env.writeEnvPairToFile("TEST_KEY", "test_value", test_filename);
+
+    // Read back contents
+    const file = try fs.cwd().openFile(test_filename, .{ .mode = .read_only });
+    defer file.close();
+    const stat = try file.stat();
+    const content = try allocator.alloc(u8, stat.size);
+    defer allocator.free(content);
+    _ = try file.readAll(content);
+
+    try testing.expectEqualStrings("TEST_KEY=test_value\n", content);
+
+    // Clean up
+    try fs.cwd().deleteFile(test_filename);
 }

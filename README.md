@@ -108,14 +108,14 @@ Creates a generic environment variable management struct that handles loading, p
 
 #### Methods
 
-- `init(allocator)` - Initializes a new environment manager
-- `initWithProcessEnvs(allocator)` - Initializes a new environment manager with the current process environment variables
+- `init(allocator, includeCurrentProcessEnvs)` - Initializes the Env struct with an allocator and a boolean flag to include current process environment variables
 - `deinit()` - Frees all resources
 - `load(?[]const u8, bool)` - Loads variables from a file (default: ".env")
 - `get([]const u8)` - Gets a variable by string name
 - `key(EnvKey)` - Gets a variable using an enum key
 - `setProcessEnv([]const u8, ?[]const u8)` - Sets an environment variable in the current process. If value is null, unsets the variable
-- `writeAll(writer, includeSystemVars)` - Writes all variables to a writer
+- `writeAllEnvPairs(writer, includeSystemVars)` - Writes all variables to a writer
+- `writeEnvPairToFile(filename)` - Writes a single environment variable pair to a file
 
 ## Contributing
 
