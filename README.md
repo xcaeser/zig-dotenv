@@ -123,7 +123,7 @@ Creates a generic environment variable management struct that handles loading, p
 - `key(EnvKey)` - Gets a variable using an enum key
 - `setProcessEnv([]const u8, ?[]const u8)` - Sets an environment variable in the current process. If value is null, unsets the variable
 - `writeAllEnvPairs(writer, includeSystemVars)` - Writes all variables to a writer
-- `writeEnvPairToFile(filename)` - Writes a single environment variable pair to a file
+- `writeEnvPairToFile(key, value, filename)` - Writes a single environment variable pair to a file
 
 ## Contributing
 
