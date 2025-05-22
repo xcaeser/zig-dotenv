@@ -22,7 +22,7 @@ const print = std.debug.print;
 /// var env = Env.init(allocator, false);
 /// defer env.deinit();
 ///
-/// try env.load(".env.local"); // or try env.load(null) -> to load .env instead
+/// try env.load(.{filename=".env.local"}); // or try env.load(.{}) -> to load .env instead
 ///
 /// const openai_key = env.key(.OPENAI_API_KEY);
 /// std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
@@ -80,6 +80,11 @@ pub fn Env(comptime EnvKey: type) type {
             self.items.deinit();
         }
 
+        const LoadOptions = struct {
+            filename: []const u8 = ".env",
+            set_envs_inprocess: bool = false,
+            silent: bool = true,
+        };
         /// Loads environment variables from a file
         ///
         /// Reads the specified file (or .env by default), parses its contents,
@@ -92,17 +97,12 @@ pub fn Env(comptime EnvKey: type) type {
         /// `@param silent` flag to suppress error messages
         ///
         /// `@throws Error` if file cannot be read or parsed
-        pub fn load(self: *Self, filename: ?[]const u8, setEnvsInProcess: bool, silent: bool) !void {
-            // Set filename, using default ".env" if not provided
-            if (filename != null) {
-                self.filename = filename.?;
-            } else {
-                self.filename = ".env";
-            }
-
+        pub fn load(self: *Self, options: LoadOptions) !void {
+            // Set filename
+            self.filename = options.filename;
             // Attempt to open the environment file
             const envFile = std.fs.cwd().openFile(self.filename, .{ .mode = .read_only }) catch {
-                if (!silent) {
+                if (!options.silent) {
                     print("Expected: '{s}', but no env file detected\n", .{self.filename});
                 }
                 return;
@@ -116,7 +116,7 @@ pub fn Env(comptime EnvKey: type) type {
             // Parse file content into environment variables
             try self.parse(content);
 
-            if (setEnvsInProcess) {
+            if (options.set_envs_inprocess) {
                 // Set parsed variables in the current process environment
                 var it = self.items.iterator();
                 while (it.next()) |entry| {
@@ -362,7 +362,7 @@ test "Env custom filename" {
     defer env.deinit();
 
     // Test setting a custom filename
-    try env.load(".env.test", true, true);
+    try env.load(.{ .filename = ".env.test", .set_envs_inprocess = true, .silent = true });
     try testing.expectEqualStrings(env.filename, ".env.test");
 }
 
@@ -459,7 +459,7 @@ test "Load environment from file" {
     var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
-    try env.load(filename, true, false);
+    try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
 
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "filevalue1");
     try testing.expectEqualStrings(env.get("TEST_KEY2"), "filevalue2");
@@ -483,7 +483,7 @@ test "Load environment with trimmed values" {
     var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
-    try env.load(filename, true, false);
+    try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
 
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "value_with_spaces");
     try testing.expectEqualStrings(env.get("TEST_KEY2"), "tabbed_value");
@@ -547,7 +547,8 @@ test "Non-existent environment file" {
     defer env.deinit();
 
     // Should not throw error for non-existent file
-    try env.load("non_existent_file.env", true, true);
+    try env.load(.{ .filename = "non_existent_file.env", .set_envs_inprocess = true, .silent = true });
+
     try testing.expectEqual(env.items.count(), 0);
 }
 
@@ -588,8 +589,8 @@ test "Environment file with and without .env extension" {
 
         var env = TestEnv.init(allocator, false);
         defer env.deinit();
+        try env.load(.{ .filename = filename });
 
-        try env.load(filename, true, false);
         try testing.expectEqualStrings(env.get("TEST_KEY1"), "regular");
     }
 
@@ -604,7 +605,8 @@ test "Environment file with and without .env extension" {
         var env = TestEnv.init(allocator, true);
         defer env.deinit();
 
-        try env.load(filename, true, false);
+        try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
+
         try testing.expectEqualStrings(env.get("TEST_KEY1"), "noextension");
     }
 }
@@ -632,7 +634,7 @@ test "Integration test" {
     defer env.deinit();
 
     // Load from file
-    try env.load(filename, true, false);
+    try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
 
     // Test string key access
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "integration_value1");

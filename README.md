@@ -2,20 +2,27 @@
 
 <div>
 
-A powerful Zig library for loading, parsing, and managing environment variables from .env files.
+A powerful Zig library for loading, parsing, and managing environment variables from `.env` files.
 
 [![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
+[![Version](https://img.shields.io/badge/ZLI-v0.6.0-green)](https://github.com/xcaeser/zig-dotenv/releases)
 
 </div>
+
+---
 
 ## ✅ Features
 
 - Load environment variables from `.env` files
-- Append or write to `.env` files
+- Append or write `key=value` pairs to `.env` files
 - Type-safe access using enums
-- Modify the **current process** environment (via `SetEnvironmentVariable`)
-- Clean API for parsing and managing `.env` values
+- Modify the **current process environment** (`setenv`, `SetEnvironmentVariable`)
+- Supports comments, quoted values, and whitespace trimming
+- Graceful fallback and silent error modes
+- Clean, testable API
+
+---
 
 ## 🚀 Usage
 
@@ -30,7 +37,7 @@ pub const EnvKeys = enum {
     S3_BUCKET,
 };
 
-pub const Env = dotenv.Env(EnvKeys);
+const Env = dotenv.Env(EnvKeys);
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -40,10 +47,8 @@ pub fn main() !void {
     var env = Env.init(allocator, true);
     defer env.deinit();
 
-    // Load from .env.local (or .env if null)
-    try env.load(".env.local", true, true); // `setEnvsInProcess = true` to modify the current process' environment, if false only env hashmap is populated, `silent = true` to suppress errors loading the file
+    try env.load(.{ .filename = ".env.local", .set_envs_inprocess = true, .silent = true });
 
-    // Access values
     const openai = env.key(.OPENAI_API_KEY);
     std.debug.print("OPENAI_API_KEY={s}\n", .{openai});
 
@@ -52,37 +57,25 @@ pub fn main() !void {
 }
 ```
 
-## 📄 Example `.env` file
+---
+
+## 📄 Example `.env` File
 
 ```dotenv
 OPENAI_API_KEY=sk-your-api-key-here
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-
 S3_BUCKET="my-bucket"
 COGNITO_CLIENT_SECRET='abcdef123456'
 ```
 
+---
+
 ## 📦 Installation
 
-### Option 1: `zig fetch`
+### using `zig fetch`
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.5.0.tar.gz
-```
-
-### Option 2: `build.zig.zon`
-
-```zig
-.{
-    .name = "your-project",
-    .version = "0.1.0",
-    .dependencies = .{
-        .dotenv = .{
-            .url = "https://github.com/xcaeser/zig-dotenv/archive/v0.5.0.tar.gz",
-            .hash = "...", // use zig's suggested hash
-        },
-    },
-}
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.6.0.tar.gz
 ```
 
 ### Add to `build.zig`
@@ -93,32 +86,50 @@ const dotenv_dep = b.dependency("dotenv", .{ .target = target, .optimize = optim
 exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 exe.linkLibC(); // Required for setenv/unsetenv
 
-// Optional for testing
+// Optional: add for unit tests
 exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 ```
 
-### 📚 API Summary
+---
 
-#### `Env(EnvKey)` type
+## 📚 API Summary
 
-Creates a generic environment manager with the following methods:
+### `Env(EnvKey)` type
 
-| Signature                                                                                            | Description                                    |
-| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `fn init(allocator: std.mem.Allocator, includeCurrentProcessEnvs: bool) Env`                         | Initialize a new environment manager           |
-| `fn deinit(self: *Env) void`                                                                         | Frees memory and internal data                 |
-| `fn load(self: *Env, filename: ?[]const u8, setEnvsInProcess: bool silent: bool) !void`              | Load a `.env` file into the environment        |
-| `fn parse(self: *Env, content: []u8) !void`                                                          | Parse raw `.env`-formatted text                |
-| `fn get(self: *Env, key: []const u8) []const u8`                                                     | Get value by string key (panics if missing)    |
-| `fn key(self: *Env, key: EnvKey) []const u8`                                                         | Get value by enum key (panics if missing)      |
-| `fn setProcessEnv(self: *Env, key: []const u8, value: ?[]const u8) !void`                            | Set or unset a variable in the current process |
-| `fn writeAllEnvPairs(self: *Env, writer: anytype, includeSystemVars: bool) !void`                    | Write all variables to a writer                |
-| `fn writeEnvPairToFile(self: *Env, key: []const u8, value: []const u8, filename: ?[]const u8) !void` | Append a `key=value` pair to file              |
+A reusable struct for managing environment variables:
+
+| Method                                                  | Description                                   |
+| ------------------------------------------------------- | --------------------------------------------- |
+| `init(allocator, includeCurrentProcessEnvs)`            | Initializes a new Env manager                 |
+| `deinit()`                                              | Frees all allocated memory                    |
+| `load(.{ filename, set_envs_inprocess, silent })`       | Loads variables from a `.env` file            |
+| `parse(content)`                                        | Parses raw `.env`-formatted text              |
+| `get("KEY")`                                            | Get a value by string key (panics if missing) |
+| `key(.ENUM_KEY)`                                        | Get a value by enum key (panics if missing)   |
+| `setProcessEnv("KEY", "VALUE")`                         | Set or unset environment variable             |
+| `writeAllEnvPairs(writer, includeSystemVars)`           | Write all variables to a writer               |
+| `writeEnvPairToFile("KEY", "VALUE", optional_filename)` | Append a `key=value` line to a file           |
+
+---
+
+## 🧪 Testing
+
+Run:
+
+```bash
+zig build test
+```
+
+Includes tests for parsing, file I/O, process environment setting, and edge cases.
+
+---
 
 ## 🤝 Contributing
 
-Issues and pull requests welcome.
+Issues and PRs welcome! Star the repo if it helped you.
+
+---
 
 ## 📝 License
 
-MIT
+MIT – see [LICENSE](LICENSE).
