@@ -84,7 +84,6 @@ zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.6.1.tar
 const dotenv_dep = b.dependency("dotenv", .{ .target = target, .optimize = optimize });
 
 exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
-exe.linkLibC(); // Required for setenv/unsetenv
 
 // Optional: add for unit tests
 exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
