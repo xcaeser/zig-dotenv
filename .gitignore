@@ -4,3 +4,5 @@ zig-out
 
 .env
 .env.local
+
+RELEASE-NOTES.md
