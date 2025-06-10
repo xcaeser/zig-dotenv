@@ -7,7 +7,7 @@ const print = std.debug.print;
 /// This function returns a type that can be used to manage environment variables.
 /// It allows loading, parsing, and setting environment variables from a .env file.
 ///
-/// @param EnvKey An enum type representing the expected environment variable keys.
+/// @param EnvKey An enum type representing the expected environment variable keys. Must be an enum
 ///
 /// @return A struct with methods for environment variable management
 ///
@@ -28,6 +28,12 @@ const print = std.debug.print;
 /// std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
 /// ```
 pub fn Env(comptime EnvKey: type) type {
+    comptime {
+        if (@typeInfo(EnvKey) != .@"enum" or @typeInfo(EnvKey).@"enum".tag_type != u8) {
+            @compileError("EnvKey must be an enum with tag type u8: enum(u8)");
+        }
+    }
+
     return struct {
         /// Path to the environment file, defaults to ".env"
         filename: []const u8,
