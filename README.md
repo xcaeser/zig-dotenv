@@ -6,7 +6,7 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 
 [![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
-[![Version](https://img.shields.io/badge/dotenv-v0.6.1-green)](https://github.com/xcaeser/zig-dotenv/releases)
+[![Version](https://img.shields.io/badge/dotenv-v0.6.2-green)](https://github.com/xcaeser/zig-dotenv/releases)
 
 </div>
 
@@ -75,7 +75,7 @@ COGNITO_CLIENT_SECRET='abcdef123456'
 ### using `zig fetch`
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.6.1.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.6.2.tar.gz
 ```
 
 ### Add to `build.zig`
