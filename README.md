@@ -10,8 +10,6 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 
 </div>
 
----
-
 ## ✅ Features
 
 - Load environment variables from `.env` files
@@ -21,8 +19,6 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 - Supports comments, quoted values, and whitespace trimming
 - Graceful fallback and silent error modes
 - Clean, testable API
-
----
 
 ## 🚀 Usage
 
@@ -57,8 +53,6 @@ pub fn main() !void {
 }
 ```
 
----
-
 ## 📄 Example `.env` File
 
 ```dotenv
@@ -67,8 +61,6 @@ AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 S3_BUCKET="my-bucket"
 COGNITO_CLIENT_SECRET='abcdef123456'
 ```
-
----
 
 ## 📦 Installation
 
@@ -89,8 +81,6 @@ exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 ```
 
----
-
 ## 📚 API Summary
 
 ### `Env(EnvKey)` type
@@ -109,8 +99,6 @@ A reusable struct for managing environment variables:
 | `writeAllEnvPairs(writer, includeSystemVars)`           | Write all variables to a writer               |
 | `writeEnvPairToFile("KEY", "VALUE", optional_filename)` | Append a `key=value` line to a file           |
 
----
-
 ## 🧪 Testing
 
 Run:
@@ -121,13 +109,9 @@ zig build test
 
 Includes tests for parsing, file I/O, process environment setting, and edge cases.
 
----
-
 ## 🤝 Contributing
 
 Issues and PRs welcome! Star the repo if it helped you.
-
----
 
 ## 📝 License
 
