@@ -14,7 +14,7 @@ const print = std.debug.print;
 /// Example:
 ///
 /// ```zig
-/// pub const EnvKeys = enum(u8) {
+/// pub const EnvKeys = enum {
 ///   OPENAI_API_KEY,
 ///   AWS_ACCESS_KEY_ID,
 /// };
@@ -29,8 +29,8 @@ const print = std.debug.print;
 /// ```
 pub fn Env(comptime EnvKey: type) type {
     comptime {
-        if (@typeInfo(EnvKey) != .@"enum" or @typeInfo(EnvKey).@"enum".tag_type != u8) {
-            @compileError("EnvKey must be an enum with tag type u8: enum(u8)");
+        if (@typeInfo(EnvKey) != .@"enum") {
+            @compileError("EnvKey must be an enum:  enum {...}");
         }
     }
 
