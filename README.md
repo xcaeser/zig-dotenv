@@ -26,7 +26,7 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 const std = @import("std");
 const dotenv = @import("dotenv");
 
-pub const EnvKeys = enum(u8) {
+pub const EnvKeys = enum {
     OPENAI_API_KEY,
     AWS_ACCESS_KEY_ID,
     COGNITO_CLIENT_SECRET,
