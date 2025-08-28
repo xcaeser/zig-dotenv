@@ -1,32 +1,36 @@
+//! Creates a generic environment variable management struct
+//!
+//! This function returns a type that can be used to manage environment variables.
+//! It allows loading, parsing, and setting environment variables from a .env file.
+//!
+//! @param EnvKey An enum type representing the expected environment variable keys. Must be an enum
+//!
+//! @return A struct with methods for environment variable management
+//!
+//! Example:
+//!
+//! ```zig
+//! pub const EnvKeys = enum {
+//!   OPENAI_API_KEY,
+//!   AWS_ACCESS_KEY_ID,
+//! };
+//! const Env = dotenv.Env(EnvKeys);
+//! var env = Env.init(allocator, false);
+//! defer env.deinit();
+//!
+//! try env.load(.{filename=".env.local"}); // or try env.load(.{}) -> to load .env instead
+//!
+//! const openai_key = env.key(.OPENAI_API_KEY);
+//! std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
+//! ```
+
 const std = @import("std");
-
+const Allocator = std.mem.Allocator;
 const print = std.debug.print;
+const testing = std.testing;
+const fs = std.fs;
+const Io = std.Io;
 
-/// Creates a generic environment variable management struct
-///
-/// This function returns a type that can be used to manage environment variables.
-/// It allows loading, parsing, and setting environment variables from a .env file.
-///
-/// @param EnvKey An enum type representing the expected environment variable keys. Must be an enum
-///
-/// @return A struct with methods for environment variable management
-///
-/// Example:
-///
-/// ```zig
-/// pub const EnvKeys = enum {
-///   OPENAI_API_KEY,
-///   AWS_ACCESS_KEY_ID,
-/// };
-/// const Env = dotenv.Env(EnvKeys);
-/// var env = Env.init(allocator, false);
-/// defer env.deinit();
-///
-/// try env.load(.{filename=".env.local"}); // or try env.load(.{}) -> to load .env instead
-///
-/// const openai_key = env.key(.OPENAI_API_KEY);
-/// std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
-/// ```
 pub fn Env(comptime EnvKey: type) type {
     comptime {
         if (@typeInfo(EnvKey) != .@"enum") {
@@ -43,7 +47,7 @@ pub fn Env(comptime EnvKey: type) type {
         items: std.process.EnvMap,
 
         /// Memory allocator used for managing string allocations
-        allocator: std.mem.Allocator,
+        allocator: Allocator,
 
         const Self = @This();
 
@@ -58,7 +62,7 @@ pub fn Env(comptime EnvKey: type) type {
         /// `@return` A new Env struct instance
         ///
         /// Caller must deinit
-        pub fn init(allocator: std.mem.Allocator, includeCurrentProcessEnvs: bool) Self {
+        pub fn init(allocator: Allocator, includeCurrentProcessEnvs: bool) Self {
             const env_map = if (includeCurrentProcessEnvs)
                 std.process.getEnvMap(allocator) catch {
                     std.debug.print("Failed to get current process environment variables, using empty map\n", .{});
@@ -115,8 +119,12 @@ pub fn Env(comptime EnvKey: type) type {
             };
             defer envFile.close();
 
+            // Get file size in bytes
+            const stat = try envFile.stat();
+            const size = stat.size;
+
             // Read entire file content (max 20KB)
-            const content = try envFile.reader().readAllAlloc(self.allocator, 20 * 1024);
+            const content = try envFile.readToEndAlloc(self.allocator, size);
             defer self.allocator.free(content);
 
             // Parse file content into environment variables
@@ -288,9 +296,17 @@ pub fn Env(comptime EnvKey: type) type {
         /// Example to write to stdout:
         ///
         /// ```zig
-        /// try env.writeAllEnvPairs(std.io.getStdOut().writer(), false);
+        ///  const file = std.fs.cwd().openFile("uhu.txt", .{ .mode = .read_write }) catch |err| switch (err) {
+        ///  error.FileNotFound => try std.fs.cwd().createFile("uhu.txt", .{}),
+        ///  else => return err,
+        ///  };
+        ///  defer file.close();
+        ///
+        ///  var writer = file.writerStreaming(&.{});
+        ///  try env.writeAllEnvPairs(&writer.interface, true);
         /// ```
-        pub fn writeAllEnvPairs(self: *Self, writer: anytype, includeSystemVars: bool) !void {
+        ///
+        pub fn writeAllEnvPairs(self: *Self, writer: *Io.Writer, includeSystemVars: bool) !void {
             var envs: std.process.EnvMap = if (includeSystemVars) try std.process.getEnvMap(self.allocator) else self.items;
             defer if (includeSystemVars) envs.deinit();
 
@@ -308,8 +324,9 @@ pub fn Env(comptime EnvKey: type) type {
             }
         }
 
+        /// If filename is null, writes to the loaded filename or defaults to ".env"
         pub fn writeEnvPairToFile(self: *Self, k: []const u8, v: []const u8, filename: ?[]const u8) !void {
-            const fname = if (filename == null) self.filename else filename.?;
+            const fname = if (filename) |f| f else self.filename;
 
             const file = std.fs.cwd().openFile(fname, .{ .mode = .read_write }) catch |err| switch (err) {
                 error.FileNotFound => try std.fs.cwd().createFile(fname, .{}),
@@ -317,28 +334,24 @@ pub fn Env(comptime EnvKey: type) type {
             };
             defer file.close();
 
+            const content = try std.fmt.allocPrint(self.allocator, "{s}={s}\n", .{ k, v });
+            defer self.allocator.free(content);
+
             const end_pos = try file.getEndPos();
             if (end_pos > 0) {
                 var buf: [1]u8 = undefined;
                 _ = try file.pread(&buf, end_pos - 1);
+                try file.seekTo(end_pos);
                 if (buf[0] != '\n') {
-                    try file.seekTo(end_pos);
-                    try file.writer().writeAll("\n");
-                } else {
-                    try file.seekTo(end_pos);
+                    try file.writeAll("\n");
                 }
-            } else {
-                try file.seekTo(0);
             }
 
-            const writer = file.writer();
-            try writer.print("{s}={s}\n", .{ k, v });
+            try file.writeAll(content);
         }
     };
 }
 
-const testing = std.testing;
-const fs = std.fs;
 const dotenv = @This();
 
 // Define test environment keys
@@ -511,13 +524,13 @@ test "Write environment variables" {
     try env.parse(@constCast(content));
 
     // Test writing to a buffer
-    var buffer = std.ArrayList(u8).init(allocator);
+    var buffer = Io.Writer.Allocating.init(allocator);
     defer buffer.deinit();
 
-    try env.writeAllEnvPairs(buffer.writer(), false);
+    try env.writeAllEnvPairs(&buffer.writer, false);
 
     // Check if the output contains our environment variables
-    const output = buffer.items;
+    const output = buffer.written();
     try testing.expect(std.mem.indexOf(u8, output, "TEST_KEY1=value1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "TEST_KEY2=value2") != null);
 }
@@ -657,11 +670,12 @@ test "Integration test" {
     try testing.expectEqualStrings(proc_value, "process_value");
 
     // Test writing
-    var buffer = std.ArrayList(u8).init(allocator);
+    var buffer = Io.Writer.Allocating.init(allocator);
     defer buffer.deinit();
-    try env.writeAllEnvPairs(buffer.writer(), false);
 
-    const output = buffer.items;
+    try env.writeAllEnvPairs(&buffer.writer, false);
+
+    const output = buffer.written();
     try testing.expect(std.mem.indexOf(u8, output, "TEST_KEY1=integration_value1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "TEST_KEY2=integration_value2") != null);
 }

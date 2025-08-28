@@ -10,6 +10,10 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 
 </div>
 
+## Docs:
+
+[dotenv reference docs](https://xcaeser.github.io/zig-dotenv)
+
 ## ✅ Features
 
 - Load environment variables from `.env` files
