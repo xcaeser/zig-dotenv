@@ -3,9 +3,9 @@
 //! This function returns a type that can be used to manage environment variables.
 //! It allows loading, parsing, and setting environment variables from a .env file.
 //!
-//! @param EnvKey An enum type representing the expected environment variable keys. Must be an enum
+//! `@param EnvKey` An enum type representing the expected environment variable keys. Must be an enum
 //!
-//! @return A struct with methods for environment variable management
+//! `@return` A struct with methods for environment variable management
 //!
 //! Example:
 //!
@@ -123,7 +123,7 @@ pub fn Env(comptime EnvKey: type) type {
             const stat = try envFile.stat();
             const size = stat.size;
 
-            // Read entire file content (max 20KB)
+            // Read entire file content
             const content = try envFile.readToEndAlloc(self.allocator, size);
             defer self.allocator.free(content);
 
@@ -148,8 +148,8 @@ pub fn Env(comptime EnvKey: type) type {
         /// Example:
         ///
         /// ```zig
-        /// const openai_key = env.get("OPENAI_API_KEY");
-        /// std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
+        ///  const openai_key = env.get("OPENAI_API_KEY");
+        ///  std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
         /// ```
         pub fn get(self: *Self, k: []const u8) []const u8 {
             return self.items.get(k).?;
