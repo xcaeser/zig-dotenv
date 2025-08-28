@@ -47,7 +47,7 @@ pub fn main() !void {
     var env = Env.init(allocator, true);
     defer env.deinit();
 
-    try env.load(.{ .filename = ".env.local", .set_envs_inprocess = true, .silent = true });
+    try env.load(.{ .filename = ".env.local", .set_envs_in_process = true });
 
     const openai = env.key(.OPENAI_API_KEY);
     std.debug.print("OPENAI_API_KEY={s}\n", .{openai});
@@ -64,6 +64,8 @@ OPENAI_API_KEY=sk-your-api-key-here
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 S3_BUCKET="my-bucket"
 COGNITO_CLIENT_SECRET='abcdef123456'
+home=$HOME
+user=${USER}
 ```
 
 ## 📦 Installation
@@ -91,17 +93,18 @@ exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 
 A reusable struct for managing environment variables:
 
-| Method                                                  | Description                                   |
-| ------------------------------------------------------- | --------------------------------------------- |
-| `init(allocator, includeCurrentProcessEnvs)`            | Initializes a new Env manager                 |
-| `deinit()`                                              | Frees all allocated memory                    |
-| `load(.{ filename, set_envs_inprocess, silent })`       | Loads variables from a `.env` file            |
-| `parse(content)`                                        | Parses raw `.env`-formatted text              |
-| `get("KEY")`                                            | Get a value by string key (panics if missing) |
-| `key(.ENUM_KEY)`                                        | Get a value by enum key (panics if missing)   |
-| `setProcessEnv("KEY", "VALUE")`                         | Set or unset environment variable             |
-| `writeAllEnvPairs(writer, includeSystemVars)`           | Write all variables to a writer               |
-| `writeEnvPairToFile("KEY", "VALUE", optional_filename)` | Append a `key=value` line to a file           |
+| Method                                                  | Description                                      |
+| ------------------------------------------------------- | ------------------------------------------------ |
+| `init(allocator, include_current_process_envs)`         | Initializes a new Env manager                    |
+| `deinit()`                                              | Frees all allocated memory                       |
+| `load(.{ filename, set_envs_inprocess, silent })`       | Loads variables from a `.env` file               |
+| `loadCurrentProcessEnvs()`                              | Loads system variables into the internal env_map |
+| `parse(content)`                                        | Parses raw `.env`-formatted text                 |
+| `get("KEY")`                                            | Get a value by string key (panics if missing)    |
+| `key(.ENUM_KEY)`                                        | Get a value by enum key (panics if missing)      |
+| `setProcessEnv("KEY", "VALUE")`                         | Set or unset environment variable                |
+| `writeAllEnvPairs(writer, include_system_vars)`         | Write all variables to a writer                  |
+| `writeEnvPairToFile("KEY", "VALUE", optional_filename)` | Append a `key=value` line to a file              |
 
 ## 🧪 Testing
 
