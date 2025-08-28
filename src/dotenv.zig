@@ -1,11 +1,4 @@
-//! Creates a generic environment variable management struct
-//!
-//! This function returns a type that can be used to manage environment variables.
-//! It allows loading, parsing, and setting environment variables from a .env file.
-//!
-//! `@param EnvKey` An enum type representing the expected environment variable keys. Must be an enum
-//!
-//! `@return` A struct with methods for environment variable management
+//! Dotenv: Loading, parsing, and setting environment variables from a .env file (or any file) with ease.
 //!
 //! Example:
 //!
@@ -18,7 +11,7 @@
 //! const env = dotenv.Env(EnvKeys).init(allocator, false);
 //! defer env.deinit();
 //!
-//! try env.load(.{filename=".env.local"}); // or try env.load(.{}) -> to load .env instead
+//! try env.load(.{ filename = ".env.local" }); // or try env.load(.{}) -> to load .env instead
 //!
 //! const openai_key = env.key(.OPENAI_API_KEY);
 //! std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
@@ -30,6 +23,18 @@ const print = std.debug.print;
 const testing = std.testing;
 const fs = std.fs;
 const Io = std.Io;
+
+const log = std.log.scoped(.dotenv);
+
+const dotenv = @This();
+
+const LoadOptions = struct {
+    /// Defaults to `.env`
+    filename: ?[]const u8 = null,
+
+    /// Set variables in the current process environment, if false, only the internal library env hashmap is populated
+    set_envs_in_process: bool = false,
+};
 
 pub fn Env(comptime EnvKey: type) type {
     comptime {
@@ -46,6 +51,8 @@ pub fn Env(comptime EnvKey: type) type {
         /// Allows for optional string values (null represents unset)
         items: std.process.EnvMap,
 
+        included_process_env: bool,
+
         /// Memory allocator used for managing string allocations
         allocator: Allocator,
 
@@ -53,32 +60,18 @@ pub fn Env(comptime EnvKey: type) type {
 
         /// Initializes a new empty Env struct instance
         ///
-        /// Creates an empty StringArrayHashMap for storing environment variables
-        ///
-        /// `@param allocator` Memory allocator for managing string allocations
-        ///
-        /// `@param includeCurrentProcessEnvs` If true, the current process' environment variables will be included in the Env struct
-        ///
-        /// `@return` A new Env struct instance
+        /// If `includeCurrentProcessEnvs = true`, the current process' environment variables will be included in the Env struct
         ///
         /// Caller must deinit
-        pub fn init(allocator: Allocator, includeCurrentProcessEnvs: bool) Self {
-            const env_map = if (includeCurrentProcessEnvs)
-                std.process.getEnvMap(allocator) catch {
-                    std.debug.print("Failed to get current process environment variables, using empty map\n", .{});
-                    return Self{
-                        .filename = ".env",
-                        .items = std.process.EnvMap.init(allocator),
-                        .allocator = allocator,
-                    };
-                }
-            else
-                std.process.EnvMap.init(allocator);
-
+        pub fn init(allocator: Allocator, include_current_process_envs: bool) Self {
             return Self{
                 .filename = ".env",
-                .items = env_map,
                 .allocator = allocator,
+                .items = if (include_current_process_envs)
+                    std.process.getEnvMap(allocator) catch std.process.EnvMap.init(allocator)
+                else
+                    std.process.EnvMap.init(allocator),
+                .included_process_env = include_current_process_envs,
             };
         }
 
@@ -90,48 +83,26 @@ pub fn Env(comptime EnvKey: type) type {
             self.items.deinit();
         }
 
-        const LoadOptions = struct {
-            filename: []const u8 = ".env",
-            set_envs_inprocess: bool = false,
-            silent: bool = true,
-        };
         /// Loads environment variables from a file
         ///
-        /// Reads the specified file (or .env by default), parses its contents,
-        /// and sets the parsed variables in the current process environment using `stdlib.h`
+        /// Supports variable interpolation in values using the format `${OTHER_VAR}`
+        /// Interpolated variables are resolved from previously loaded values or the current process environment
         ///
-        /// `@param filename` Optional custom filename for the environment file
-        ///
-        /// `@param setEnvsInProcess` flag to set variables in the current process environment, if not set only the env hashmap is populated
-        ///
-        /// `@param silent` flag to suppress error messages
-        ///
-        /// `@throws Error` if file cannot be read or parsed
         pub fn load(self: *Self, options: LoadOptions) !void {
-            // Set filename
-            self.filename = options.filename;
-            // Attempt to open the environment file
-            const envFile = std.fs.cwd().openFile(self.filename, .{ .mode = .read_only }) catch {
-                if (!options.silent) {
-                    print("Expected: '{s}', but no env file detected\n", .{self.filename});
-                }
-                return;
-            };
+            self.filename = if (options.filename) |fln| fln else self.filename;
+
+            const envFile = try std.fs.cwd().openFile(self.filename, .{ .mode = .read_only });
             defer envFile.close();
 
-            // Get file size in bytes
-            const stat = try envFile.stat();
-            const size = stat.size;
+            const fstat = try envFile.stat();
+            const fsize = fstat.size;
 
-            // Read entire file content
-            const content = try envFile.readToEndAlloc(self.allocator, size);
+            const content = try envFile.readToEndAlloc(self.allocator, fsize);
             defer self.allocator.free(content);
 
-            // Parse file content into environment variables
             try self.parse(content);
 
-            if (options.set_envs_inprocess) {
-                // Set parsed variables in the current process environment
+            if (options.set_envs_in_process) {
                 var it = self.items.iterator();
                 while (it.next()) |entry| {
                     try self.setProcessEnv(entry.key_ptr.*, entry.value_ptr.*);
@@ -139,14 +110,22 @@ pub fn Env(comptime EnvKey: type) type {
             }
         }
 
+        /// Loads the current process environment variables into the Env struct.
+        ///
+        /// Populates the internal map with all environment variables from the current process
+        ///
+        pub fn loadCurrentProcessEnvs(self: *Self) !void {
+            var env_map = try std.process.getEnvMap(self.allocator);
+            defer env_map.deinit();
+            var it = env_map.iterator();
+            while (it.next()) |e| {
+                try self.items.put(e.key_ptr.*, e.value_ptr.*);
+            }
+        }
+
         /// Retrieves the value of a specific environment variable by name
         ///
-        /// `@param k` Name of the environment variable
-        ///
-        /// `@return String` value of the environment variable, or error message if not found
-        ///
         /// Example:
-        ///
         /// ```zig
         ///  const openai_key = env.get("OPENAI_API_KEY");
         ///  std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
@@ -157,14 +136,7 @@ pub fn Env(comptime EnvKey: type) type {
 
         /// Retrieves the value of a specific environment variable from the provided enum keys
         ///
-        /// Uses an enum key to safely access environment variables
-        ///
-        /// `@param k` Enum key representing the environment variable.
-        ///
-        /// `@return String` value of the environment variable, or error message if not found
-        ///
         /// Example:
-        ///
         /// ```zig
         /// const openai_key = env.key(.OPENAI_API_KEY);
         /// std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
@@ -173,27 +145,27 @@ pub fn Env(comptime EnvKey: type) type {
             return self.items.get(@tagName(k)).?;
         }
 
-        /// Parses environment variable content from a string
-        ///
-        /// Splits the content into lines and extracts key-value pairs
+        /// Splits the `content` into lines and extracts key-value pairs
         /// Supports comments (lines starting with #) and trims whitespace
         ///
-        /// `@param content` Raw content of the environment file
+        /// Additionally, supports variable interpolation in values using the format `${OTHER_VAR}`
+        /// Interpolated variables are resolved from other parsed values or the current process environment
+        /// (if not already included during initialization)
         ///
-        /// @throws Error during parsing or allocation
         pub fn parse(self: *Self, content: []u8) !void {
-            // Split content into lines
+            var internal_temp_map = std.process.EnvMap.init(self.allocator);
+            defer internal_temp_map.deinit();
+
+            var found_to_interpolate: bool = false;
+
             var line = std.mem.splitScalar(u8, content, '\n');
             while (line.next()) |l| {
-                // Skip empty lines and comments
                 if (l.len == 0 or l[0] == '#') continue;
 
-                // Split line into key and value
                 var pair = std.mem.splitScalar(u8, l, '=');
                 const k = std.mem.trim(u8, pair.first(), " \t");
 
                 if (pair.next()) |value| {
-                    // Trim whitespace from value
                     var value_trimmed = std.mem.trim(u8, value, " \t");
                     if (value_trimmed.len >= 2) {
                         if (value_trimmed[0] == '"' and value_trimmed[value_trimmed.len - 1] == '"') {
@@ -201,37 +173,50 @@ pub fn Env(comptime EnvKey: type) type {
                         } else if (value_trimmed[0] == '\'' and value_trimmed[value_trimmed.len - 1] == '\'') {
                             value_trimmed = value_trimmed[1 .. value_trimmed.len - 1];
                         }
+                        if (std.mem.startsWith(u8, value_trimmed, "$")) found_to_interpolate = true;
                     }
 
-                    // Let EnvMap handle the memory management by using put
                     try self.items.put(k, value_trimmed);
-                } else {
-                    // Log warning for keys without values
-                    print("No value for key: {s}\n", .{k});
+                    try internal_temp_map.put(k, value_trimmed);
+                }
+            }
+
+            // resolve ${other var}
+            if (found_to_interpolate) {
+                if (!self.included_process_env) {
+                    var env_map = try std.process.getEnvMap(self.allocator);
+                    defer env_map.deinit();
+
+                    var it = env_map.iterator();
+                    while (it.next()) |e| {
+                        try internal_temp_map.put(e.key_ptr.*, e.value_ptr.*);
+                    }
+                }
+
+                var it = self.items.iterator();
+                while (it.next()) |e| {
+                    try internal_temp_map.put(e.key_ptr.*, e.value_ptr.*);
+                }
+
+                it = internal_temp_map.iterator();
+
+                while (it.next()) |e| {
+                    const k = e.key_ptr.*;
+                    const v = e.value_ptr.*;
+
+                    if (std.mem.startsWith(u8, v, "$")) {
+                        const var_name = if (std.mem.startsWith(u8, v[1..], "{") and std.mem.endsWith(u8, v, "}")) v[2 .. v.len - 1] else v[1..];
+
+                        const resolved_value = if (var_name.len > 0) internal_temp_map.get(var_name) orelse "" else "";
+
+                        try self.items.put(k, resolved_value);
+                    }
                 }
             }
         }
 
-        /// Sets an environment variable in the current process
+        /// Sets or Unsets an environment variable in the current process
         ///
-        /// Uses C standard library functions to set or unset environment variables
-        /// Supports setting a value or clearing an existing variable
-        ///
-        /// `@param k` Key of the environment variable
-        ///
-        /// `@param v` Optional value to set (put null to unset)
-        ///
-        /// @throws Error if setting/unsetting fails
-        ///
-        /// Example to check all current env variables in the process:
-        /// ```zig
-        /// var map = try std.process.getEnvMap(allocator);
-        /// defer map.deinit();
-        /// var it = map.iterator();
-        /// while (it.next()) |entry| {
-        ///     if (!std.mem.eql(u8, "", entry.value_ptr.*)) std.debug.print("{s}={s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
-        /// }
-        /// ```
         pub fn setProcessEnv(self: *Self, k: []const u8, v: ?[]const u8) !void {
             const builtin = @import("builtin");
             const os = builtin.os.tag;
@@ -244,7 +229,6 @@ pub fn Env(comptime EnvKey: type) type {
                 }
             });
 
-            // Create null-terminated strings for C functions
             const key_c = try self.allocator.dupeZ(u8, k);
             defer self.allocator.free(key_c);
 
@@ -287,17 +271,10 @@ pub fn Env(comptime EnvKey: type) type {
         ///
         /// Outputs each key-value pair in the format "KEY=VALUE\n"
         ///
-        /// `@param writer` A std.io.Writer to write the output to
-        ///
-        /// `@param includeSystemVars` Whether to include system variables
-        ///
-        /// @return Error if writing fails
-        ///
-        /// Example to write to stdout:
-        ///
+        /// Example to write to a random file:
         /// ```zig
-        ///  const file = std.fs.cwd().openFile("uhu.txt", .{ .mode = .read_write }) catch |err| switch (err) {
-        ///  error.FileNotFound => try std.fs.cwd().createFile("uhu.txt", .{}),
+        ///  const file = std.fs.cwd().openFile("test.txt", .{ .mode = .read_write }) catch |err| switch (err) {
+        ///  error.FileNotFound => try std.fs.cwd().createFile("test.txt", .{}),
         ///  else => return err,
         ///  };
         ///  defer file.close();
@@ -306,16 +283,15 @@ pub fn Env(comptime EnvKey: type) type {
         ///  try env.writeAllEnvPairs(&writer.interface, true);
         /// ```
         ///
-        pub fn writeAllEnvPairs(self: *Self, writer: *Io.Writer, includeSystemVars: bool) !void {
-            var envs: std.process.EnvMap = if (includeSystemVars) try std.process.getEnvMap(self.allocator) else self.items;
-            defer if (includeSystemVars) envs.deinit();
+        pub fn writeAllEnvPairs(self: *Self, writer: *Io.Writer, include_system_vars: bool) !void {
+            if (include_system_vars and !self.included_process_env) try self.loadCurrentProcessEnvs();
 
-            if (envs.count() == 0) {
+            if (self.items.count() == 0) {
                 try writer.writeAll("No environments variables set\n");
                 return;
             }
 
-            var it = envs.iterator();
+            var it = self.items.iterator();
             while (it.next()) |entry| {
                 try writer.writeAll(entry.key_ptr.*);
                 try writer.writeAll("=");
@@ -324,7 +300,10 @@ pub fn Env(comptime EnvKey: type) type {
             }
         }
 
+        /// Creates file if if doesn't already exist
+        ///
         /// If filename is null, writes to the loaded filename or defaults to ".env"
+        ///
         pub fn writeEnvPairToFile(self: *Self, k: []const u8, v: []const u8, filename: ?[]const u8) !void {
             const fname = if (filename) |f| f else self.filename;
 
@@ -351,8 +330,6 @@ pub fn Env(comptime EnvKey: type) type {
         }
     };
 }
-
-const dotenv = @This();
 
 // Define test environment keys
 const EnvKeys = enum(u8) {
@@ -381,7 +358,7 @@ test "Env custom filename" {
     defer env.deinit();
 
     // Test setting a custom filename
-    try env.load(.{ .filename = ".env.test", .set_envs_inprocess = true, .silent = true });
+    env.load(.{ .filename = ".env.test", .set_envs_in_process = true }) catch {};
     try testing.expectEqualStrings(env.filename, ".env.test");
 }
 
@@ -478,7 +455,7 @@ test "Load environment from file" {
     var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
-    try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
+    try env.load(.{ .filename = filename, .set_envs_in_process = true });
 
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "filevalue1");
     try testing.expectEqualStrings(env.get("TEST_KEY2"), "filevalue2");
@@ -502,7 +479,7 @@ test "Load environment with trimmed values" {
     var env = TestEnv.init(allocator, false);
     defer env.deinit();
 
-    try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
+    try env.load(.{ .filename = filename, .set_envs_in_process = true });
 
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "value_with_spaces");
     try testing.expectEqualStrings(env.get("TEST_KEY2"), "tabbed_value");
@@ -566,7 +543,7 @@ test "Non-existent environment file" {
     defer env.deinit();
 
     // Should not throw error for non-existent file
-    try env.load(.{ .filename = "non_existent_file.env", .set_envs_inprocess = true, .silent = true });
+    env.load(.{ .filename = "non_existent_file.env", .set_envs_in_process = true }) catch {};
 
     try testing.expectEqual(env.items.count(), 0);
 }
@@ -624,7 +601,7 @@ test "Environment file with and without .env extension" {
         var env = TestEnv.init(allocator, true);
         defer env.deinit();
 
-        try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
+        try env.load(.{ .filename = filename, .set_envs_in_process = true });
 
         try testing.expectEqualStrings(env.get("TEST_KEY1"), "noextension");
     }
@@ -653,7 +630,7 @@ test "Integration test" {
     defer env.deinit();
 
     // Load from file
-    try env.load(.{ .filename = filename, .set_envs_inprocess = true, .silent = false });
+    try env.load(.{ .filename = filename, .set_envs_in_process = true });
 
     // Test string key access
     try testing.expectEqualStrings(env.get("TEST_KEY1"), "integration_value1");
@@ -691,9 +668,7 @@ test "writeEnvPairToFile appends key=value to a file" {
 
     // clear file content first - for testing purposes
     {
-        const file = try std.fs.cwd().createFile(test_filename, .{
-            .truncate = true,
-        });
+        const file = try std.fs.cwd().createFile(test_filename, .{ .truncate = true });
         file.close();
     }
 

@@ -1,8 +1,7 @@
-.zig-cache
+.*
 
 zig-out
 
-.env
-.env.local
+main.zig
 
 RELEASE-NOTES.md
