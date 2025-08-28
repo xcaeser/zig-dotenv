@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
-    // for internal testing
+    // for local testing
     // addMainExecutable(b, target, optimize);
 
     // Create tests
