@@ -14,8 +14,8 @@
 //!   OPENAI_API_KEY,
 //!   AWS_ACCESS_KEY_ID,
 //! };
-//! const Env = dotenv.Env(EnvKeys);
-//! var env = Env.init(allocator, false);
+//!
+//! const env = dotenv.Env(EnvKeys).init(allocator, false);
 //! defer env.deinit();
 //!
 //! try env.load(.{filename=".env.local"}); // or try env.load(.{}) -> to load .env instead
