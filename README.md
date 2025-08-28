@@ -37,14 +37,11 @@ pub const EnvKeys = enum {
     S3_BUCKET,
 };
 
-const Env = dotenv.Env(EnvKeys);
 
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = std.heap.smp_allocator;
 
-    var env = Env.init(allocator, true);
+    const env = dotenv.Env(EnvKeys).init(allocator, true);;
     defer env.deinit();
 
     try env.load(.{ .filename = ".env.local", .set_envs_in_process = true });
