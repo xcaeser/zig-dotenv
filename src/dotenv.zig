@@ -163,10 +163,10 @@ pub fn Env(comptime EnvKey: type) type {
                 if (l.len == 0 or l[0] == '#') continue;
 
                 var pair = std.mem.splitScalar(u8, l, '=');
-                const k = std.mem.trim(u8, pair.first(), " \t");
+                const k = std.mem.trim(u8, pair.first(), " \t\r");
 
                 if (pair.next()) |value| {
-                    var value_trimmed = std.mem.trim(u8, value, " \t");
+                    var value_trimmed = std.mem.trim(u8, value, " \t\r");
                     if (value_trimmed.len >= 2) {
                         if (value_trimmed[0] == '"' and value_trimmed[value_trimmed.len - 1] == '"') {
                             value_trimmed = value_trimmed[1 .. value_trimmed.len - 1];
