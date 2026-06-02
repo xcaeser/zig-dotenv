@@ -203,3 +203,152 @@ const EnvKeys = enum(u8) {
     TEST_EMPTY_KEY,
     TEST_NUMERIC_VALUE,
 };
+
+fn testProcessInit(
+    process_env: *std.process.Environ.Map,
+    arena: *std.heap.ArenaAllocator,
+) std.process.Init {
+    return .{
+        .minimal = undefined,
+        .arena = arena,
+        .gpa = testing.allocator,
+        .io = testing.io,
+        .environ_map = process_env,
+        .preopens = .empty,
+    };
+}
+
+test "init creates an empty dotenv map" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try testing.expectEqual(@as(std.process.Environ.Map.Size, 0), env.map.count());
+    try testing.expectEqualStrings("", env.get("MISSING_KEY"));
+}
+
+test "parse handles comments whitespace quotes and empty values" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    const content =
+        \\# ignored comment
+        \\
+        \\ TEST_KEY1 = "value1"
+        \\TEST_KEY2='value2'
+        \\TEST_EMPTY_KEY=
+        \\TEST_NUMERIC_VALUE=123
+        \\UNQUOTED = value with spaces
+    ;
+
+    try env.parse(@constCast(content));
+
+    try testing.expectEqual(@as(std.process.Environ.Map.Size, 5), env.map.count());
+    try testing.expectEqualStrings("value1", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("value2", env.get("TEST_KEY2"));
+    try testing.expectEqualStrings("", env.get("TEST_EMPTY_KEY"));
+    try testing.expectEqualStrings("123", env.get("TEST_NUMERIC_VALUE"));
+    try testing.expectEqualStrings("value with spaces", env.get("UNQUOTED"));
+}
+
+test "get and key return parsed values" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    const content =
+        \\TEST_KEY1=value1
+        \\TEST_KEY2=value2
+    ;
+
+    try env.parse(@constCast(content));
+
+    try testing.expectEqualStrings("value1", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("value1", env.key(.TEST_KEY1));
+    try testing.expectEqualStrings("value2", env.key(.TEST_KEY2));
+    try testing.expectEqualStrings("", env.key(.TEST_EMPTY_KEY));
+}
+
+test "parse interpolates from process env map" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("SOURCE_VALUE", "from_process_env");
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    const content =
+        \\TEST_KEY1=$SOURCE_VALUE
+        \\TEST_KEY2=${SOURCE_VALUE}
+        \\TEST_EMPTY_KEY=$DOES_NOT_EXIST
+    ;
+
+    try env.parse(@constCast(content));
+
+    try testing.expectEqualStrings("from_process_env", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("from_process_env", env.get("TEST_KEY2"));
+    try testing.expectEqualStrings("", env.get("TEST_EMPTY_KEY"));
+}
+
+test "loadCurrentProcessEnvs copies supplied process env map" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("TEST_KEY1", "current_value1");
+    try process_env.put("TEST_KEY2", "current_value2");
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.loadCurrentProcessEnvs();
+
+    try testing.expectEqualStrings("current_value1", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("current_value2", env.key(.TEST_KEY2));
+}
+
+test "load reads dotenv file" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    const filename = ".zig-dotenv-test.env";
+    defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
+    try Io.Dir.cwd().writeFile(testing.io, .{
+        .sub_path = filename,
+        .data =
+        \\TEST_KEY1=file_value1
+        \\TEST_KEY2=file_value2
+        ,
+    });
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.load(.{ .filename = filename });
+
+    try testing.expectEqualStrings("file_value1", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("file_value2", env.key(.TEST_KEY2));
+}
