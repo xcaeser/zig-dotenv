@@ -4,7 +4,7 @@
 
 A powerful Zig library for loading, parsing, and managing environment variables from `.env` files.
 
-[![Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
+[![Version](https://img.shields.io/badge/Zig_Version-0.16.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Version](https://img.shields.io/badge/dotenv-v0.9.0-green)](https://github.com/xcaeser/zig-dotenv/releases)
 
@@ -17,11 +17,12 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 ## ✅ Features
 
 - Load environment variables from `.env` files
-- Append or write `key=value` pairs to `.env` files
 - Type-safe access using enums
-- Modify the **current process environment** (`setenv`, `SetEnvironmentVariable`)
+- Read from and copy the current process environment map
+- Modify the **current process environment** with `setProcessEnv`
 - Supports comments, quoted values, and whitespace trimming
-- Graceful fallback and silent error modes
+- Supports `$KEY` and `${KEY}` interpolation from the process environment map
+- Missing keys return an empty string
 - Clean, testable API
 
 ## 🚀 Usage
@@ -37,14 +38,14 @@ pub const EnvKeys = enum {
     S3_BUCKET,
 };
 
-
-pub fn main() !void {
-    const allocator = std.heap.smp_allocator;
-
-    const env = dotenv.Env(EnvKeys).init(allocator, true);;
+pub fn main(process_init: std.process.Init) !void {
+    var env = dotenv.init(process_init, EnvKeys);
     defer env.deinit();
 
-    try env.load(.{ .filename = ".env.local", .set_envs_in_process = true });
+    try env.load(.{
+        .filename = ".env.local",
+        .include_current_process_envs = true,
+    });
 
     const openai = env.key(.OPENAI_API_KEY);
     std.debug.print("OPENAI_API_KEY={s}\n", .{openai});
@@ -61,8 +62,8 @@ OPENAI_API_KEY=sk-your-api-key-here
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 S3_BUCKET="my-bucket"
 COGNITO_CLIENT_SECRET='abcdef123456'
-home=$HOME
-user=${USER}
+HOME_DIR=$HOME
+USER_NAME=${USER}
 ```
 
 ## 📦 Installation
@@ -86,22 +87,38 @@ exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 
 ## 📚 API Summary
 
-### `Env(EnvKey)` type
+### Initialization
 
-A reusable struct for managing environment variables:
+`zig-dotenv` uses Zig `0.16.0`'s `std.process.Init` API. Accept it in `main`, then create an env manager with your enum type:
+
+```zig
+pub fn main(process_init: std.process.Init) !void {
+    var env = dotenv.init(process_init, EnvKeys);
+    defer env.deinit();
+}
+```
+
+### Env API
 
 | Method                                                  | Description                                      |
 | ------------------------------------------------------- | ------------------------------------------------ |
-| `init(allocator, include_current_process_envs)`         | Initializes a new Env manager                    |
+| `dotenv.init(process_init, EnvKey)`                     | Initializes a new Env manager                    |
 | `deinit()`                                              | Frees all allocated memory                       |
-| `load(.{ filename, set_envs_inprocess, silent })`       | Loads variables from a `.env` file               |
-| `loadCurrentProcessEnvs()`                              | Loads system variables into the internal env_map |
+| `load(.{ .filename, .include_current_process_envs })`   | Loads variables from a `.env` file               |
+| `loadCurrentProcessEnvs()`                              | Copies process variables into the internal map   |
 | `parse(content)`                                        | Parses raw `.env`-formatted text                 |
-| `get("KEY")`                                            | Get a value by string key (panics if missing)    |
-| `key(.ENUM_KEY)`                                        | Get a value by enum key (panics if missing)      |
-| `setProcessEnv("KEY", "VALUE")`                         | Set or unset environment variable                |
-| `writeAllEnvPairs(writer, include_system_vars)`         | Write all variables to a writer                  |
-| `writeEnvPairToFile("KEY", "VALUE", optional_filename)` | Append a `key=value` line to a file              |
+| `get("KEY")`                                            | Gets a value by string key, or `""` if missing   |
+| `key(.ENUM_KEY)`                                        | Gets a value by enum key, or `""` if missing     |
+| `setProcessEnv("KEY", "VALUE")`                         | Sets a process environment variable              |
+| `setProcessEnv("KEY", null)`                            | Unsets a process environment variable            |
+
+### Load Options
+
+| Option                         | Default | Description                                      |
+| ------------------------------ | ------- | ------------------------------------------------ |
+| `filename`                     | `.env`  | File to load                                     |
+| `include_current_process_envs` | `false` | Copies `process_init.environ_map` into the map   |
+| `export_to_process_env`        | `false` | Reserved; not currently implemented             |
 
 ## 🧪 Testing
 
@@ -111,7 +128,7 @@ Run:
 zig build test
 ```
 
-Includes tests for parsing, file I/O, process environment setting, and edge cases.
+Includes tests for parsing, file I/O, interpolation, process environment loading, and lookup behavior.
 
 ## 🤝 Contributing
 
