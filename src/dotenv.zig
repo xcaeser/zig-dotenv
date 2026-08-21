@@ -3,28 +3,31 @@
 //! Example:
 //!
 //! ```zig
-//! pub const EnvKeys = enum {
-//!   OPENAI_API_KEY,
-//!   AWS_ACCESS_KEY_ID,
+//! const std = @import("std");
+//! const dotenv = @import("dotenv");
+//!
+//! const EnvKeys = enum {
+//!     OPENAI_API_KEY,
+//!     AWS_ACCESS_KEY_ID,
 //! };
 //!
-//! const env = dotenv.Env(EnvKeys).init(allocator, false);
-//! defer env.deinit();
+//! pub fn main(process_init: std.process.Init) !void {
+//!     var env = dotenv.init(process_init, EnvKeys);
+//!     defer env.deinit();
 //!
-//! try env.load(.{ filename = ".env.local" }); // or try env.load(.{}) -> to load .env instead
+//!     try env.load(.{ .filename = ".env.local" });
 //!
-//! const openai_key = env.key(.OPENAI_API_KEY);
-//! std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
+//!     const openai_key = env.key(.OPENAI_API_KEY);
+//!     std.debug.print("OPENAI_API_KEY={s}\n", .{openai_key});
+//! }
 //! ```
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const print = std.debug.print;
 const testing = std.testing;
 const Io = std.Io;
-const builtin = @import("builtin");
 
-const LoadOptions = struct {
+pub const LoadOptions = struct {
     /// Defaults to `.env`
     filename: []const u8 = ".env",
 
@@ -41,10 +44,10 @@ const LoadOptions = struct {
 ///
 /// Caller must `deinit`.
 pub fn init(process_init: std.process.Init, comptime EnvKey: type) Env(EnvKey) {
-    return .init(process_init);
+    return Env(EnvKey).init(process_init);
 }
 
-fn Env(comptime EnvKey: type) type {
+pub fn Env(comptime EnvKey: type) type {
     comptime {
         switch (@typeInfo(EnvKey)) {
             .@"enum" => {},
@@ -54,9 +57,11 @@ fn Env(comptime EnvKey: type) type {
 
     return struct {
         /// Storage for environment variables using an Environ.Map
+        /// Environment variables loaded by dotenv.
         map: std.process.Environ.Map,
 
-        internal_process_init: std.process.Init,
+        /// Application environment supplied by std.process.Init.
+        process_env: *std.process.Environ.Map,
 
         /// GPA used for managing string allocations
         allocator: Allocator,
@@ -67,7 +72,7 @@ fn Env(comptime EnvKey: type) type {
 
         fn init(process_init: std.process.Init) Self {
             return Self{
-                .internal_process_init = process_init,
+                .process_env = process_init.environ_map,
                 .io = process_init.io,
                 .allocator = process_init.gpa,
                 .map = .init(process_init.gpa),
@@ -85,29 +90,26 @@ fn Env(comptime EnvKey: type) type {
         /// Interpolated variables are resolved from previously loaded values or the current process environment
         pub fn load(self: *Self, options: LoadOptions) !void {
             var buf: [1024]u8 = undefined;
-            const content = try Io.Dir.cwd().readFile(self.io, options.filename, &buf);
+            const content = try Io.Dir.cwd().readFile(
+                self.io,
+                options.filename,
+                &buf,
+            );
 
             try self.parse(content);
 
-            if (options.include_current_process_envs) {
-                try self.loadCurrentProcessEnvs();
+            if (options.export_to_process_env) {
+                try self.process_env.putAll(&self.map);
             }
 
-            // if (options.export_to_process_env) {
-            //     var it = self.items.iterator();
-            //     while (it.next()) |entry| {
-            //         try self.setProcessEnv(entry.key_ptr.*, entry.value_ptr.*);
-            //     }
-            // }
+            if (options.include_current_process_envs) {
+                try self.map.putAll(self.process_env);
+            }
         }
 
         /// Loads the current process environment variables into the Env struct.
         pub fn loadCurrentProcessEnvs(self: *Self) !void {
-            var it = self.internal_process_init.environ_map.iterator();
-
-            while (it.next()) |e| {
-                try self.map.put(e.key_ptr.*, e.value_ptr.*);
-            }
+            try self.map.putAll(self.process_env);
         }
 
         /// Retrieves the value of a specific environment variable by name
@@ -157,7 +159,11 @@ fn Env(comptime EnvKey: type) type {
                         if (std.mem.startsWith(u8, value_trimmed, "$")) {
                             const var_name = if (std.mem.startsWith(u8, value_trimmed[1..], "{") and std.mem.endsWith(u8, value_trimmed, "}")) value_trimmed[2 .. value_trimmed.len - 1] else value_trimmed[1..];
 
-                            value_trimmed = if (var_name.len > 0) self.internal_process_init.environ_map.get(var_name) orelse "" else "";
+                            value_trimmed = if (var_name.len > 0)
+                                self.map.get(var_name) orelse
+                                    self.process_env.get(var_name) orelse ""
+                            else
+                                "";
                         }
                     }
                     try self.map.put(k, value_trimmed);
@@ -167,30 +173,10 @@ fn Env(comptime EnvKey: type) type {
 
         /// Sets or Unsets an environment variable in the current process
         pub fn setProcessEnv(self: *Self, k: []const u8, v: ?[]const u8) !void {
-            const os = builtin.os.tag;
-
-            // Import C standard library for setenv/unsetenv
-            const c = @cImport({
-                @cInclude("stdlib.h");
-                if (os == .windows) {
-                    @cInclude("windows.h");
-                }
-            });
-
-            const key_c: [:0]u8 = try self.allocator.dupeSentinel(u8, k, 0);
-            defer self.allocator.free(key_c);
-
-            if (v) |val| {
-                const value_c: [:0]u8 = try self.allocator.dupeSentinel(u8, val, 0);
-                defer self.allocator.free(value_c);
-
-                if (c.setenv(key_c, value_c, 1) != 0) {
-                    return error.SetEnvFailed;
-                }
+            if (v) |value| {
+                try self.process_env.put(k, value);
             } else {
-                if (c.unsetenv(key_c) != 0) {
-                    return error.UnsetEnvFailed;
-                }
+                _ = self.process_env.swapRemove(k);
             }
         }
     };
