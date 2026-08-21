@@ -295,6 +295,29 @@ test "parse interpolates from process env map" {
     try testing.expectEqualStrings("", env.get("TEST_EMPTY_KEY"));
 }
 
+test "parse interpolates from previously parsed values before process env" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("SOURCE_VALUE", "from_process_env");
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    const content =
+        \\SOURCE_VALUE=from_dotenv
+        \\TEST_KEY1=$SOURCE_VALUE
+        \\TEST_KEY2=${SOURCE_VALUE}
+    ;
+
+    try env.parse(@constCast(content));
+
+    try testing.expectEqualStrings("from_dotenv", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("from_dotenv", env.get("TEST_KEY2"));
+}
+
 test "loadCurrentProcessEnvs copies supplied process env map" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -311,6 +334,23 @@ test "loadCurrentProcessEnvs copies supplied process env map" {
 
     try testing.expectEqualStrings("current_value1", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("current_value2", env.key(.TEST_KEY2));
+}
+
+test "setProcessEnv sets and unsets values in supplied process env map" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.setProcessEnv("TEST_KEY1", "set_value");
+    try testing.expectEqualStrings("set_value", process_env.get("TEST_KEY1").?);
+
+    try env.setProcessEnv("TEST_KEY1", null);
+    try testing.expect(process_env.get("TEST_KEY1") == null);
 }
 
 test "load reads dotenv file" {
@@ -337,4 +377,55 @@ test "load reads dotenv file" {
 
     try testing.expectEqualStrings("file_value1", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("file_value2", env.key(.TEST_KEY2));
+}
+
+test "load exports parsed values to supplied process env map" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("TEST_KEY1", "old_value");
+
+    const filename = ".zig-dotenv-export-test.env";
+    defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
+    try Io.Dir.cwd().writeFile(testing.io, .{
+        .sub_path = filename,
+        .data =
+        \\TEST_KEY1=exported_value
+        \\TEST_KEY2=new_value
+        ,
+    });
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.load(.{ .filename = filename, .export_to_process_env = true });
+
+    try testing.expectEqualStrings("exported_value", process_env.get("TEST_KEY1").?);
+    try testing.expectEqualStrings("new_value", process_env.get("TEST_KEY2").?);
+}
+
+test "load includes supplied process env values and lets them override parsed values" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("TEST_KEY1", "process_value");
+    try process_env.put("PROCESS_ONLY", "included_value");
+
+    const filename = ".zig-dotenv-include-test.env";
+    defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
+    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = filename, .data =
+        \\TEST_KEY1=file_value,
+    });
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.load(.{ .filename = filename, .include_current_process_envs = true });
+
+    try testing.expectEqualStrings("process_value", env.get("TEST_KEY1"));
+    try testing.expectEqualStrings("included_value", env.get("PROCESS_ONLY"));
 }

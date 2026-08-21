@@ -20,7 +20,7 @@ jobs:
       - name: Setup Zig Compiler
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0-dev.1818+7051f8e73
 
       - name: Build and test DOTENV
         run: zig build test --summary all

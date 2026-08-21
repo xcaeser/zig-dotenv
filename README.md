@@ -4,9 +4,9 @@
 
 A powerful Zig library for loading, parsing, and managing environment variables from `.env` files.
 
-[![Version](https://img.shields.io/badge/Zig_Version-0.16.0-orange.svg?logo=zig)](README.md)
+[![Version](https://img.shields.io/badge/Zig_Version-0.17.0--dev-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
-[![Version](https://img.shields.io/badge/dotenv-v0.9.0-green)](https://github.com/xcaeser/zig-dotenv/releases)
+[![Version](https://img.shields.io/badge/dotenv-v0.10.1-green)](https://github.com/xcaeser/zig-dotenv/releases)
 
 </div>
 
@@ -19,9 +19,9 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 - Load environment variables from `.env` files
 - Type-safe access using enums
 - Read from and copy the current process environment map
-- Modify the **current process environment** with `setProcessEnv`
+- Modify the supplied process environment map with `setProcessEnv`
 - Supports comments, quoted values, and whitespace trimming
-- Supports `$KEY` and `${KEY}` interpolation from the process environment map
+- Supports `$KEY` and `${KEY}` interpolation from previously parsed values or the process environment map
 - Missing keys return an empty string
 - Clean, testable API
 
@@ -71,7 +71,7 @@ USER_NAME=${USER}
 ### using `zig fetch`
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.9.0.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.10.1.tar.gz
 ```
 
 ### Add to `build.zig`
@@ -89,7 +89,7 @@ exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 
 ### Initialization
 
-`zig-dotenv` uses Zig `0.16.0`'s `std.process.Init` API. Accept it in `main`, then create an env manager with your enum type:
+`zig-dotenv` requires Zig `0.17.0-dev.1818+7051f8e73` or newer and uses its `std.process.Init` API. Zig `0.16.0` is not supported. Accept `process_init` in `main`, then create an env manager with your enum type:
 
 ```zig
 pub fn main(process_init: std.process.Init) !void {
@@ -104,13 +104,13 @@ pub fn main(process_init: std.process.Init) !void {
 | ------------------------------------------------------- | ------------------------------------------------ |
 | `dotenv.init(process_init, EnvKey)`                     | Initializes a new Env manager                    |
 | `deinit()`                                              | Frees all allocated memory                       |
-| `load(.{ .filename, .include_current_process_envs })`   | Loads variables from a `.env` file               |
+| `load(.{ .filename, ... })`                            | Loads variables from a `.env` file               |
 | `loadCurrentProcessEnvs()`                              | Copies process variables into the internal map   |
 | `parse(content)`                                        | Parses raw `.env`-formatted text                 |
 | `get("KEY")`                                            | Gets a value by string key, or `""` if missing   |
 | `key(.ENUM_KEY)`                                        | Gets a value by enum key, or `""` if missing     |
-| `setProcessEnv("KEY", "VALUE")`                         | Sets a process environment variable              |
-| `setProcessEnv("KEY", null)`                            | Unsets a process environment variable            |
+| `setProcessEnv("KEY", "VALUE")`                         | Sets a value in the supplied process map         |
+| `setProcessEnv("KEY", null)`                            | Unsets a value in the supplied process map       |
 
 ### Load Options
 
@@ -118,7 +118,7 @@ pub fn main(process_init: std.process.Init) !void {
 | ------------------------------ | ------- | ------------------------------------------------ |
 | `filename`                     | `.env`  | File to load                                     |
 | `include_current_process_envs` | `false` | Copies `process_init.environ_map` into the map   |
-| `export_to_process_env`        | `false` | Reserved; not currently implemented             |
+| `export_to_process_env`        | `false` | Copies parsed values into the supplied process map |
 
 ## 🧪 Testing
 
@@ -128,7 +128,7 @@ Run:
 zig build test
 ```
 
-Includes tests for parsing, file I/O, interpolation, process environment loading, and lookup behavior.
+Includes tests for parsing, file I/O, interpolation precedence, process environment import/export, mutation, and lookup behavior.
 
 ## 🤝 Contributing
 
