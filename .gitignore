@@ -1,4 +1,5 @@
 .*
+!.github/
 
 zig-out
 mise.toml
