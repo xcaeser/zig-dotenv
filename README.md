@@ -1,3 +1,5 @@
+
+
 # zig-dotenv
 
 <div>
@@ -102,7 +104,7 @@ pub fn main(process_init: std.process.Init) !void {
 
 | Method                                                  | Description                                      |
 | ------------------------------------------------------- | ------------------------------------------------ |
-| `dotenv.init(process_init, EnvKey)`                     | Initializes a new Env manager                    |
+| `dotenv.init(process_init, EnvKeys)`                    | Initializes a new Env manager                    |
 | `deinit()`                                              | Frees all allocated memory                       |
 | `load(.{ .filename, ... })`                            | Loads variables from a `.env` file               |
 | `loadCurrentProcessEnvs()`                              | Copies process variables into the internal map   |
