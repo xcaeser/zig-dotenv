@@ -6,7 +6,7 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 
 [![Version](https://img.shields.io/badge/Zig_Version-0.17.0--dev-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
-[![Version](https://img.shields.io/badge/dotenv-v0.10.2-green)](https://github.com/xcaeser/zig-dotenv/releases)
+[![Version](https://img.shields.io/badge/dotenv-v0.10.3-green)](https://github.com/xcaeser/zig-dotenv/releases)
 
 </div>
 
@@ -71,7 +71,7 @@ USER_NAME=${USER}
 ### using `zig fetch`
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.10.2.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.10.3.tar.gz
 ```
 
 ### Add to `build.zig`
