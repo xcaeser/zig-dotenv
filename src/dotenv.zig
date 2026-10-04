@@ -27,6 +27,10 @@ const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const Io = std.Io;
 
+/// Largest dotenv file `load` reads. A larger file is an error, never a
+/// silently shortened one.
+pub const max_file_bytes = 1024 * 1024;
+
 pub const LoadOptions = struct {
     /// Defaults to `.env`
     filename: []const u8 = ".env",
@@ -89,12 +93,15 @@ pub fn Env(comptime EnvKey: type) type {
         /// Supports variable interpolation in values using the format `${OTHER_VAR}`
         /// Interpolated variables are resolved from previously loaded values or the current process environment
         pub fn load(self: *Self, options: LoadOptions) !void {
-            var buf: [1024]u8 = undefined;
-            const content = try Io.Dir.cwd().readFile(
+            // The limit is exclusive: a file of exactly `max_file_bytes` loads,
+            // a larger one fails with `error.StreamTooLong`.
+            const content = try Io.Dir.cwd().readFileAlloc(
                 self.io,
                 options.filename,
-                &buf,
+                self.allocator,
+                .limited(max_file_bytes + 1),
             );
+            defer self.allocator.free(content);
 
             try self.parse(content);
 
@@ -403,6 +410,30 @@ test "load reads dotenv file" {
 
     try testing.expectEqualStrings("file_value1", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("file_value2", env.key(.TEST_KEY2));
+}
+
+test "load reads a file past its first kilobyte" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    const filename = ".zig-dotenv-test-long.env";
+    defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
+    const padding: [2000]u8 = @splat('x');
+    try Io.Dir.cwd().writeFile(testing.io, .{
+        .sub_path = filename,
+        .data = "TEST_KEY1=first\n# " ++ padding ++ "\nTEST_KEY2=last\n",
+    });
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.load(.{ .filename = filename });
+
+    try testing.expectEqualStrings("first", env.key(.TEST_KEY1));
+    try testing.expectEqualStrings("last", env.key(.TEST_KEY2));
 }
 
 test "load exports parsed values to supplied process env map" {
