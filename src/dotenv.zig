@@ -145,10 +145,11 @@ pub fn Env(comptime EnvKey: type) type {
             while (line.next()) |l| {
                 if (l.len == 0 or l[0] == '#') continue;
 
-                var pair = std.mem.splitScalar(u8, l, '=');
-                const k = std.mem.trim(u8, pair.first(), " \t\r");
+                // Split on the first '=' only, values may contain '=' themselves
+                if (std.mem.cutScalar(u8, l, '=')) |pair| {
+                    const k = std.mem.trim(u8, pair[0], " \t\r");
+                    const value = pair[1];
 
-                if (pair.next()) |value| {
                     var value_trimmed = std.mem.trim(u8, value, " \t\r");
                     if (value_trimmed.len >= 2) {
                         if (value_trimmed[0] == '"' and value_trimmed[value_trimmed.len - 1] == '"') {
@@ -246,6 +247,31 @@ test "parse handles comments whitespace quotes and empty values" {
     try testing.expectEqualStrings("", env.get("TEST_EMPTY_KEY"));
     try testing.expectEqualStrings("123", env.get("TEST_NUMERIC_VALUE"));
     try testing.expectEqualStrings("value with spaces", env.get("UNQUOTED"));
+}
+
+test "parse keeps '=' inside values" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    const content =
+        \\MYSQL_URI=mysql://appuser:p=ssword@127.0.0.1:3306/clone_restaurant
+        \\CREDENTIALS_KEY=ZGV2X29ubHlfY3JlZGVudGlhbHNfa2V5XzMyYnl0ZXM=
+        \\QUOTED = "a=b=c"
+        \\NO_EQUALS_SIGN
+    ;
+
+    try env.parse(@constCast(content));
+
+    try testing.expectEqual(@as(std.process.Environ.Map.Size, 3), env.map.count());
+    try testing.expectEqualStrings("mysql://appuser:p=ssword@127.0.0.1:3306/clone_restaurant", env.get("MYSQL_URI"));
+    try testing.expectEqualStrings("ZGV2X29ubHlfY3JlZGVudGlhbHNfa2V5XzMyYnl0ZXM=", env.get("CREDENTIALS_KEY"));
+    try testing.expectEqualStrings("a=b=c", env.get("QUOTED"));
 }
 
 test "get and key return parsed values" {
