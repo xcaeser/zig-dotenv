@@ -4,9 +4,9 @@
 
 A powerful Zig library for loading, parsing, and managing environment variables from `.env` files.
 
-[![Version](https://img.shields.io/badge/Zig_Version-0.17.0--dev-orange.svg?logo=zig)](README.md)
+[![Version](https://img.shields.io/badge/Zig_Version-0.17.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
-[![Version](https://img.shields.io/badge/dotenv-v0.10.3-green)](https://github.com/xcaeser/zig-dotenv/releases)
+[![Version](https://img.shields.io/badge/dotenv-v0.11.0-green)](https://github.com/xcaeser/zig-dotenv/releases)
 
 </div>
 
@@ -71,7 +71,7 @@ USER_NAME=${USER}
 ### using `zig fetch`
 
 ```bash
-zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.10.3.tar.gz
+zig fetch --save=dotenv https://github.com/xcaeser/zig-dotenv/archive/v0.11.0.tar.gz
 ```
 
 ### Add to `build.zig`
@@ -89,7 +89,7 @@ exe_unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
 
 ### Initialization
 
-`zig-dotenv` requires Zig `0.17.0-dev.1818+7051f8e73` or newer and uses its `std.process.Init` API. Zig `0.16.0` is not supported. Accept `process_init` in `main`, then create an env manager with your enum type:
+`zig-dotenv` requires Zig `0.17.0` or newer and uses its `std.process.Init` API. Zig `0.16.0` is not supported. Accept `process_init` in `main`, then create an env manager with your enum type:
 
 ```zig
 pub fn main(process_init: std.process.Init) !void {
