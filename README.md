@@ -21,7 +21,7 @@ A powerful Zig library for loading, parsing, and managing environment variables 
 - Read from and copy the current process environment map
 - Modify the supplied process environment map with `setProcessEnv`
 - Supports comments, quoted values, and whitespace trimming
-- Supports `$KEY` and `${KEY}` interpolation from previously parsed values or the process environment map
+- Supports `$KEY` and `${KEY}` interpolation from previously parsed values or the process environment map; single-quoted values stay literal
 - Missing keys return an empty string
 - Clean, testable API
 
@@ -117,7 +117,7 @@ pub fn main(process_init: std.process.Init) !void {
 | Option                         | Default | Description                                      |
 | ------------------------------ | ------- | ------------------------------------------------ |
 | `filename`                     | `.env`  | File to load                                     |
-| `include_current_process_envs` | `false` | Copies `process_init.environ_map` into the map   |
+| `include_current_process_envs` | `false` | Copies `process_init.environ_map` into the map; its values win over the file |
 | `export_to_process_env`        | `false` | Copies parsed values into the supplied process map |
 
 ## 🧪 Testing

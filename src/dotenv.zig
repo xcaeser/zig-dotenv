@@ -36,7 +36,8 @@ pub const LoadOptions = struct {
     filename: []const u8 = ".env",
 
     /// When true, include the current process' environment variables into the
-    /// parsed/internal map
+    /// parsed/internal map. They win over values from the file, also when
+    /// `export_to_process_env` is set.
     include_current_process_envs: bool = false,
 
     /// If true, set variables in the current process environment; if false, only the
@@ -105,12 +106,13 @@ pub fn Env(comptime EnvKey: type) type {
 
             try self.parse(content);
 
-            if (options.export_to_process_env) {
-                try self.process_env.putAll(&self.map);
-            }
-
+            // Include before export, so process values win in both maps
             if (options.include_current_process_envs) {
                 try self.map.putAll(self.process_env);
+            }
+
+            if (options.export_to_process_env) {
+                try self.process_env.putAll(&self.map);
             }
         }
 
@@ -144,7 +146,8 @@ pub fn Env(comptime EnvKey: type) type {
         /// Splits the `content` into lines and extracts key-value pairs
         /// Supports comments (lines starting with #) and trims whitespace
         ///
-        /// Additionally, supports variable interpolation in values using the format `${OTHER_VAR}` or `$OTHER_VAR
+        /// Additionally, supports variable interpolation in values using the format `${OTHER_VAR}` or `$OTHER_VAR`.
+        /// Single-quoted values are kept literal.
         ///
         /// No need to call this function as it is used in `load` fn. Unless you want to provide your own string.
         pub fn parse(self: *Self, content: []const u8) !void {
@@ -166,16 +169,20 @@ pub fn Env(comptime EnvKey: type) type {
                         if (value_trimmed[0] == '"' and value_trimmed[value_trimmed.len - 1] == '"') {
                             value_trimmed = value_trimmed[1 .. value_trimmed.len - 1];
                         } else if (value_trimmed[0] == '\'' and value_trimmed[value_trimmed.len - 1] == '\'') {
-                            value_trimmed = value_trimmed[1 .. value_trimmed.len - 1];
+                            // Single quotes keep the value literal, no interpolation
+                            try self.map.put(k, value_trimmed[1 .. value_trimmed.len - 1]);
+                            continue;
                         }
                         if (std.mem.startsWith(u8, value_trimmed, "$")) {
-                            const var_name = if (std.mem.startsWith(u8, value_trimmed[1..], "{") and std.mem.endsWith(u8, value_trimmed, "}")) value_trimmed[2 .. value_trimmed.len - 1] else value_trimmed[1..];
+                            const braced = std.mem.startsWith(u8, value_trimmed[1..], "{") and std.mem.endsWith(u8, value_trimmed, "}");
+                            const var_name = if (braced) value_trimmed[2 .. value_trimmed.len - 1] else value_trimmed[1..];
 
-                            value_trimmed = if (var_name.len > 0)
-                                self.map.get(var_name) orelse
-                                    self.process_env.get(var_name) orelse ""
-                            else
-                                "";
+                            // Only a whole `$NAME` or `${NAME}` is a reference; any other
+                            // value starting with '$' (a bcrypt hash, "$5 off") is kept as is
+                            if (isVarName(var_name)) {
+                                value_trimmed = self.map.get(var_name) orelse
+                                    self.process_env.get(var_name) orelse "";
+                            }
                         }
                     }
                     try self.map.put(k, value_trimmed);
@@ -192,6 +199,15 @@ pub fn Env(comptime EnvKey: type) type {
             }
         }
     };
+}
+
+/// True when `name` is a letter or '_' followed by letters, digits or '_'
+fn isVarName(name: []const u8) bool {
+    if (name.len == 0 or std.ascii.isDigit(name[0])) return false;
+    for (name) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+    }
+    return true;
 }
 
 // Define test environment keys
@@ -388,6 +404,36 @@ test "parse interpolates from previously parsed values before process env" {
     try testing.expectEqualStrings("from_dotenv", env.get("TEST_KEY2"));
 }
 
+test "parse keeps values that are not a variable reference" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("SOURCE_VALUE", "from_process_env");
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    const content =
+        \\HASH=$2b$10$abcdef
+        \\PRICE="$5 off"
+        \\UNCLOSED=${SOURCE_VALUE
+        \\EMPTY_BRACES=${}
+        \\SINGLE='$SOURCE_VALUE'
+        \\DOUBLE="$SOURCE_VALUE"
+    ;
+
+    try env.parse(content);
+
+    try testing.expectEqualStrings("$2b$10$abcdef", env.get("HASH"));
+    try testing.expectEqualStrings("$5 off", env.get("PRICE"));
+    try testing.expectEqualStrings("${SOURCE_VALUE", env.get("UNCLOSED"));
+    try testing.expectEqualStrings("${}", env.get("EMPTY_BRACES"));
+    try testing.expectEqualStrings("$SOURCE_VALUE", env.get("SINGLE"));
+    try testing.expectEqualStrings("from_process_env", env.get("DOUBLE"));
+}
+
 test "loadCurrentProcessEnvs copies supplied process env map" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -525,6 +571,35 @@ test "load includes supplied process env values and lets them override parsed va
 
     try testing.expectEqualStrings("process_value", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("included_value", env.get("PROCESS_ONLY"));
+}
+
+test "load keeps process env values when both including and exporting" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+    try process_env.put("TEST_KEY1", "process_value");
+
+    const filename = ".zig-dotenv-include-export-test.env";
+    defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
+    try Io.Dir.cwd().writeFile(testing.io, .{
+        .sub_path = filename,
+        .data =
+        \\TEST_KEY1=file_value
+        \\TEST_KEY2=file_only
+        ,
+    });
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.load(.{ .filename = filename, .include_current_process_envs = true, .export_to_process_env = true });
+
+    try testing.expectEqualStrings("process_value", env.key(.TEST_KEY1));
+    try testing.expectEqualStrings("process_value", process_env.get("TEST_KEY1").?);
+    try testing.expectEqualStrings("file_only", env.key(.TEST_KEY2));
+    try testing.expectEqualStrings("file_only", process_env.get("TEST_KEY2").?);
 }
 
 test "load fails on a missing file" {
