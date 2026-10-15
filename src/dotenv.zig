@@ -147,14 +147,18 @@ pub fn Env(comptime EnvKey: type) type {
         /// Additionally, supports variable interpolation in values using the format `${OTHER_VAR}` or `$OTHER_VAR
         ///
         /// No need to call this function as it is used in `load` fn. Unless you want to provide your own string.
-        pub fn parse(self: *Self, content: []u8) !void {
+        pub fn parse(self: *Self, content: []const u8) !void {
             var line = std.mem.splitScalar(u8, content, '\n');
-            while (line.next()) |l| {
+            while (line.next()) |raw| {
+                const l = std.mem.trimStart(u8, raw, " \t");
                 if (l.len == 0 or l[0] == '#') continue;
 
                 // Split on the first '=' only, values may contain '=' themselves
                 if (std.mem.cutScalar(u8, l, '=')) |pair| {
                     const k = std.mem.trim(u8, pair[0], " \t\r");
+                    // Environ.Map asserts the key is valid (non-empty, no NUL),
+                    // so skip such lines like any other malformed one
+                    if (!std.process.Environ.Map.validateKeyForPut(k)) continue;
                     const value = pair[1];
 
                     var value_trimmed = std.mem.trim(u8, value, " \t\r");
@@ -246,7 +250,7 @@ test "parse handles comments whitespace quotes and empty values" {
         \\UNQUOTED = value with spaces
     ;
 
-    try env.parse(@constCast(content));
+    try env.parse(content);
 
     try testing.expectEqual(@as(std.process.Environ.Map.Size, 5), env.map.count());
     try testing.expectEqualStrings("value1", env.get("TEST_KEY1"));
@@ -273,12 +277,45 @@ test "parse keeps '=' inside values" {
         \\NO_EQUALS_SIGN
     ;
 
-    try env.parse(@constCast(content));
+    try env.parse(content);
 
     try testing.expectEqual(@as(std.process.Environ.Map.Size, 3), env.map.count());
     try testing.expectEqualStrings("mysql://appuser:p=ssword@127.0.0.1:3306/clone_restaurant", env.get("MYSQL_URI"));
     try testing.expectEqualStrings("ZGV2X29ubHlfY3JlZGVudGlhbHNfa2V5XzMyYnl0ZXM=", env.get("CREDENTIALS_KEY"));
     try testing.expectEqualStrings("a=b=c", env.get("QUOTED"));
+}
+
+test "parse handles CRLF line endings" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.parse("# comment\r\nTEST_KEY1=value1\r\nTEST_KEY2 = \"value2\"\r\n");
+
+    try testing.expectEqual(@as(std.process.Environ.Map.Size, 2), env.map.count());
+    try testing.expectEqualStrings("value1", env.key(.TEST_KEY1));
+    try testing.expectEqualStrings("value2", env.key(.TEST_KEY2));
+}
+
+test "parse skips indented comments and lines without a valid key" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try env.parse("=no_key\n  =no_key\n\x00=nul_key\n  # COMMENTED=1\n\t#TABBED=1\nTEST_KEY1=kept\n");
+
+    try testing.expectEqual(@as(std.process.Environ.Map.Size, 1), env.map.count());
+    try testing.expectEqualStrings("kept", env.key(.TEST_KEY1));
 }
 
 test "get and key return parsed values" {
@@ -296,7 +333,7 @@ test "get and key return parsed values" {
         \\TEST_KEY2=value2
     ;
 
-    try env.parse(@constCast(content));
+    try env.parse(content);
 
     try testing.expectEqualStrings("value1", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("value1", env.key(.TEST_KEY1));
@@ -321,7 +358,7 @@ test "parse interpolates from process env map" {
         \\TEST_EMPTY_KEY=$DOES_NOT_EXIST
     ;
 
-    try env.parse(@constCast(content));
+    try env.parse(content);
 
     try testing.expectEqualStrings("from_process_env", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("from_process_env", env.get("TEST_KEY2"));
@@ -345,7 +382,7 @@ test "parse interpolates from previously parsed values before process env" {
         \\TEST_KEY2=${SOURCE_VALUE}
     ;
 
-    try env.parse(@constCast(content));
+    try env.parse(content);
 
     try testing.expectEqualStrings("from_dotenv", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("from_dotenv", env.get("TEST_KEY2"));
@@ -474,8 +511,11 @@ test "load includes supplied process env values and lets them override parsed va
 
     const filename = ".zig-dotenv-include-test.env";
     defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
-    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = filename, .data =
-        \\TEST_KEY1=file_value,
+    try Io.Dir.cwd().writeFile(testing.io, .{
+        .sub_path = filename,
+        .data =
+        \\TEST_KEY1=file_value
+        ,
     });
 
     var env = init(testProcessInit(&process_env, &arena), EnvKeys);
@@ -485,4 +525,43 @@ test "load includes supplied process env values and lets them override parsed va
 
     try testing.expectEqualStrings("process_value", env.get("TEST_KEY1"));
     try testing.expectEqualStrings("included_value", env.get("PROCESS_ONLY"));
+}
+
+test "load fails on a missing file" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try testing.expectError(error.FileNotFound, env.load(.{ .filename = ".zig-dotenv-test-missing.env" }));
+}
+
+test "load accepts a file of max_file_bytes and rejects a larger one" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var process_env = std.process.Environ.Map.init(testing.allocator);
+    defer process_env.deinit();
+
+    const data = try testing.allocator.alloc(u8, max_file_bytes + 1);
+    defer testing.allocator.free(data);
+    @memset(data, '#');
+    @memcpy(data[0..13], "TEST_KEY1=ok\n");
+
+    const filename = ".zig-dotenv-test-max.env";
+    defer Io.Dir.cwd().deleteFile(testing.io, filename) catch {};
+
+    var env = init(testProcessInit(&process_env, &arena), EnvKeys);
+    defer env.deinit();
+
+    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = filename, .data = data[0..max_file_bytes] });
+    try env.load(.{ .filename = filename });
+    try testing.expectEqualStrings("ok", env.key(.TEST_KEY1));
+
+    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = filename, .data = data });
+    try testing.expectError(error.StreamTooLong, env.load(.{ .filename = filename }));
 }
